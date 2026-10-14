@@ -2,12 +2,13 @@
 #define MEASUREMENT_INFO_H
 
 #include "MeasurementTypes.h"
+#include "MeasurementUnits.h"
 
 struct MeasurementInfo
 {
     MeasurementType type;
     const char* name;
-    const char* unit;
+    MeasurementUnits unit;
 };
 
 #endif

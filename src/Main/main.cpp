@@ -26,7 +26,7 @@ void setup()
   Serial.print("Sensores inicializados...\n");
   Serial.print("LECTURAS OBTENIDAS \n");
 
-  sensors.PrintReads();
+  sensors.GetDataFromSensors(true);
   lastRead = millis();
 }
 
@@ -37,6 +37,6 @@ void loop()
   if (currentTime - lastRead >= READ_INTERVAL)
   {
     lastRead = currentTime;
-    sensors.PrintReads();
+    sensors.GetDataFromSensors(true);
   }
 }

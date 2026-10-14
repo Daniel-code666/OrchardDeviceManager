@@ -29,6 +29,7 @@ SensorReading DS18B20Sensor::GetSensorData()
     }
 
     return {
+        deviceId,
         deviceName,
         measurementInfo,
         devicePin,

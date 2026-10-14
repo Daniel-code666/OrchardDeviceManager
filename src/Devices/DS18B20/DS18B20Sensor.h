@@ -23,7 +23,7 @@ class DS18B20Sensor : public Device
         const MeasurementInfo measurementInfo = {
             MeasurementType::SoilTemperature,
             "Temperatura del suelo",
-            "°C"
+            MeasurementUnits::Celcius
         };
 };
 

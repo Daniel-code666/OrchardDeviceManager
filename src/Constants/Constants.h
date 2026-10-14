@@ -18,3 +18,6 @@ constexpr uint8_t SOIL_TEMP_PIN = 7;
 
 // CONSTANTE DE TIEMPO PARA LECTURA
 constexpr unsigned long READ_INTERVAL = 5000;
+
+// CONSTANTE PARA REPRESENTAR NO PIN
+constexpr uint8_t NO_PIN = 0xFF;

@@ -7,6 +7,7 @@
 
 struct SensorReading
 {
+    int sensorId;
     std::string sensorName;
     MeasurementInfo measurementInfo;
     uint8_t sensorPin;
