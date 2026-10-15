@@ -2,6 +2,7 @@
 #include "../Devices/DS18B20/DS18B20Sensor.h"
 #include "../Devices/BH1750/BH1750Sensor.h"
 #include "../Devices/SHT40/SHT40Sensor.h"
+#include "../Devices/SoilMoisture/SoilMoistureSensor.h"
 #include "../Constants/Constants.h"
 #include "../Utils/EnumsSwitch.h"
 
@@ -14,6 +15,8 @@ namespace
     DS18B20Sensor ds18b20Sensor(1, SOIL_TEMP_PIN);
     BH1750Sensor bh1750Sensor(2);
     SHT40Sensor sht40Sensor(3);
+    SoilMoistureSensor soilMoistureSensorA(4, SOIL_1_PIN, "Soil Moisture 1", 3009, 1290, 2587, 2250);
+    SoilMoistureSensor soilMoistureSensorB(5, SOIL_2_PIN, "Soil Moisture 2", 2909, 900, 2462, 2172);
     EnumsSwitch enumsSwitch = EnumsSwitch();
 }
 
@@ -33,6 +36,8 @@ void Sensors::GetDataFromSensors(bool opt)
     SensorReading ds18b20Reading = ds18b20Sensor.GetSensorData();
     SensorReading bh1750Reading = bh1750Sensor.GetSensorData();
     std::array<SensorReading, 2> sht40Readings = sht40Sensor.GetBothReadings();
+    SensorReading soilMoistureSensorAReading = soilMoistureSensorA.GetSensorData();
+    SensorReading soilMoistureSensorBReading = soilMoistureSensorB.GetSensorData();
 
     if (opt)
     {
@@ -42,6 +47,8 @@ void Sensors::GetDataFromSensors(bool opt)
         sensors.push_back(bh1750Reading);
         sensors.push_back(sht40Readings[0]);
         sensors.push_back(sht40Readings[1]);
+        sensors.push_back(soilMoistureSensorAReading);
+        sensors.push_back(soilMoistureSensorBReading);
         
         PrintData(sensors);
     }

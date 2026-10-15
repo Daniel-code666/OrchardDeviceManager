@@ -9,7 +9,7 @@ std::string EnumsSwitch::MeasurementTypesName(MeasurementType measurementType)
         case MeasurementType::AirTemperature: return "AirTemperature";
         case MeasurementType::AirHumidity: return "AirHumidity";
         case MeasurementType::Illuminance: return "Illuminance";
-        case MeasurementType::SoilMoisture: return "SoulMoisture";
+        case MeasurementType::SoilMoisture: return "SoilMoisture";
         default: return "Desconocido";
     }
 }
