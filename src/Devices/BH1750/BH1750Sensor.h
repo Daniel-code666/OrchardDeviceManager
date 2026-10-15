@@ -11,9 +11,9 @@ class BH1750Sensor : public Device
 
         void Init() override;
         SensorReading GetSensorData();
-    private:
         const u_int8_t i2cAddress = 0x23;
-
+        const u_int8_t i2cAddress2 = 0x5C;
+    private:
         BH1750 lightMeter;
 
         const MeasurementInfo measurementInfo = {

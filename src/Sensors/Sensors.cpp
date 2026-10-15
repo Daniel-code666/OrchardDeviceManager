@@ -41,14 +41,15 @@ void Sensors::GetDataFromSensors(bool opt)
     }
 }
 
+// inicializa WIRE para el bh1750
 void Sensors::InitializeWire()
 {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 }
 
+// imprime los datos de todos los sensores incluidos en el arreglo
 void Sensors::PrintData(std::vector<SensorReading> sensors)
 {
-    // imprime los datos de todos los sensores incluidos en el arreglo
     for(int i = 0; i < sensors.size(); i++)
     {
         Serial.print(sensors[i].sensorId);
@@ -62,6 +63,8 @@ void Sensors::PrintData(std::vector<SensorReading> sensors)
         Serial.print(enumsSwitch.MeasurementTypesName(sensors[i].measurementInfo.type).c_str());
         Serial.print("|");
         Serial.print(enumsSwitch.MeasurementUnitsName(sensors[i].measurementInfo.unit).c_str());
+        Serial.print("|");
+        Serial.print(sensors[i].value);
         Serial.print("|");
         Serial.print("\n");
     }

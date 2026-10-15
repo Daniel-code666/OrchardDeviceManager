@@ -9,10 +9,9 @@ BH1750Sensor::BH1750Sensor(int id) : Device(id, NO_PIN, "BH1750", ConnectionType
 
 void BH1750Sensor::Init()
 {
-    if (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2cAddress))
-        Serial.print("Conexión fallida \n");
-    else
-        Serial.print("Conexión exitosa, iniciado sensor");
+    bool isInitialized = lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, i2cAddress, &Wire);
+
+    Serial.println(isInitialized ? "Inicializado BH1750" : "No inicializado BH1750");
 }
 
 SensorReading BH1750Sensor::GetSensorData()

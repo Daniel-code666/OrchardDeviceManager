@@ -10,7 +10,7 @@ std::string EnumsSwitch::MeasurementTypesName(MeasurementType measurementType)
         case MeasurementType::AirHumidity: return "AirHumidity";
         case MeasurementType::Illuminance: return "Illuminance";
         case MeasurementType::SoilMoisture: return "SoulMoisture";
-        default: "No conocido";
+        default: return "Desconocido";
     }
 }
 
@@ -21,7 +21,7 @@ std::string EnumsSwitch::MeasurementUnitsName(MeasurementUnits measurementUnits)
         case MeasurementUnits::Celcius: return "Celcius";
         case MeasurementUnits::Lux: return "Lux";
         case MeasurementUnits::Percentage: return "Percentage";
-        defaul: "No conocido";
+        default: return "Desconocido";
     }
 }
 
@@ -33,5 +33,6 @@ std::string EnumsSwitch::ConnectionTypeName(ConnectionType connType)
         case ConnectionType::Digital: return "Digital";
         case ConnectionType::I2C: return "I2C";
         case ConnectionType::OneWire: return "OneWire";
+        default: return "Desconocido";
     }
 }
