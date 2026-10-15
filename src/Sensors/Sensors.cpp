@@ -1,6 +1,7 @@
 #include "Sensors.h"
 #include "../Devices/DS18B20/DS18B20Sensor.h"
 #include "../Devices/BH1750/BH1750Sensor.h"
+#include "../Devices/SHT40/SHT40Sensor.h"
 #include "../Constants/Constants.h"
 #include "../Utils/EnumsSwitch.h"
 
@@ -12,6 +13,7 @@ namespace
 {
     DS18B20Sensor ds18b20Sensor(1, SOIL_TEMP_PIN);
     BH1750Sensor bh1750Sensor(2);
+    SHT40Sensor sht40Sensor(3);
     EnumsSwitch enumsSwitch = EnumsSwitch();
 }
 
@@ -22,6 +24,7 @@ void Sensors::InitializeSensors()
 
     ds18b20Sensor.Init();
     bh1750Sensor.Init();
+    sht40Sensor.Init();
 }
 
 // obtiene los valores de los sensores, opt = true imprime en consola, false lo contrario
@@ -29,6 +32,7 @@ void Sensors::GetDataFromSensors(bool opt)
 {
     SensorReading ds18b20Reading = ds18b20Sensor.GetSensorData();
     SensorReading bh1750Reading = bh1750Sensor.GetSensorData();
+    std::array<SensorReading, 2> sht40Readings = sht40Sensor.GetBothReadings();
 
     if (opt)
     {
@@ -36,6 +40,8 @@ void Sensors::GetDataFromSensors(bool opt)
 
         sensors.push_back(ds18b20Reading);
         sensors.push_back(bh1750Reading);
+        sensors.push_back(sht40Readings[0]);
+        sensors.push_back(sht40Readings[1]);
         
         PrintData(sensors);
     }

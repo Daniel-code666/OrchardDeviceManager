@@ -18,7 +18,7 @@ std::string EnumsSwitch::MeasurementUnitsName(MeasurementUnits measurementUnits)
 {
     switch (measurementUnits)
     {
-        case MeasurementUnits::Celcius: return "Celcius";
+        case MeasurementUnits::Celsius: return "Celsius";
         case MeasurementUnits::Lux: return "Lux";
         case MeasurementUnits::Percentage: return "Percentage";
         default: return "Desconocido";

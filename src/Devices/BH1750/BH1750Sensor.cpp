@@ -1,5 +1,4 @@
 #include "BH1750Sensor.h"
-#include <Wire.h>
 #include <BH1750.h>
 #include "Constants/Constants.h"
 

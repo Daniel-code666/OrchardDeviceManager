@@ -5,7 +5,7 @@
 
 enum class MeasurementUnits : uint8_t
 {
-    Celcius,
+    Celsius,
     Lux,
     Percentage
 };
