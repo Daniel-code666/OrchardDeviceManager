@@ -30,6 +30,18 @@ void Sensors::InitializeSensors()
     ds18b20Sensor.Init();
     bh1750Sensor.Init();
     sht40Sensor.Init();
+    waterPump.Init();
+}
+
+bool Sensors::SetWaterPumpState(bool state, bool manualSet)
+{
+    AddedSoilSensorsReadings totalSoilData = SumSoilReadings();
+
+    bool autoSet = manualSet ? false : true;
+
+    bool isSetted = waterPump.SetState(state, manualSet, autoSet, totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues);
+
+    return isSetted;
 }
 
 // obtiene los valores de los sensores, opt = true imprime en consola, false lo contrario
@@ -101,4 +113,16 @@ void Sensors::PrintActuatorData(ActuatorData actuatorData)
     Serial.print("|");
     Serial.print(actuatorData.value);
     Serial.print("\n");
+}
+
+AddedSoilSensorsReadings Sensors::SumSoilReadings()
+{
+    SensorReading soilMoistureSensorAReading = soilMoistureSensorA.GetSensorData();
+    SensorReading soilMoistureSensorBReading = soilMoistureSensorB.GetSensorData();
+
+    return {
+        soilMoistureSensorA.GetDrySoilPercentage() + soilMoistureSensorB.GetDrySoilPercentage(),
+        soilMoistureSensorA.GetWetSoilPercentage() + soilMoistureSensorB.GetWetSoilPercentage(),
+        soilMoistureSensorAReading.value + soilMoistureSensorBReading.value
+    };
 }

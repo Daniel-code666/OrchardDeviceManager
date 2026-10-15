@@ -10,6 +10,11 @@ class SoilMoistureSensor : public Device
 
         void Init() override;
         SensorReading GetSensorData();
+        int GetRawValue();
+        int GetDrySoilValue();
+        int GetWetSoilValue();
+        float GetDrySoilPercentage();
+        float GetWetSoilPercentage();
     private:
         const int airValue;
         const int waterValue;
@@ -21,6 +26,8 @@ class SoilMoistureSensor : public Device
             "Soil moisture",
             MeasurementUnits::Percentage
         };
+
+        float ConvertToPercentage(int rawValue);
 };
 
 #endif

@@ -11,7 +11,7 @@ class WaterPump : public Device
 
         void Init() override;
         bool GetState();
-        bool SetState(bool state, bool manualSet, bool autoSet, int drySoilValue, int wetSoilValue);
+        bool SetState(bool state, bool manualSet, bool autoSet, float moisturePercentage, float drySoilPercentage, float wetSoilPercentage);
         ActuatorData GetActuatorData();
 };
 
