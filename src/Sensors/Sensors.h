@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "../Objects/SensorReading.h"
+#include "../Objects/ActuatorData.h"
 
 class Sensors {
     public:
@@ -10,7 +11,8 @@ class Sensors {
         void GetDataFromSensors(bool opt);
     private:
         void InitializeWire();
-        void PrintData(std::vector<SensorReading> sensors);
+        void PrintSensorData(std::vector<SensorReading> sensors);
+        void PrintActuatorData(ActuatorData actuatorData);
 };
 
 #endif

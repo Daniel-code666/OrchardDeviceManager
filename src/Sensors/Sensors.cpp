@@ -3,6 +3,7 @@
 #include "../Devices/BH1750/BH1750Sensor.h"
 #include "../Devices/SHT40/SHT40Sensor.h"
 #include "../Devices/SoilMoisture/SoilMoistureSensor.h"
+#include "../Devices/WaterPump/WaterPump.h"
 #include "../Constants/Constants.h"
 #include "../Utils/EnumsSwitch.h"
 
@@ -17,6 +18,7 @@ namespace
     SHT40Sensor sht40Sensor(3);
     SoilMoistureSensor soilMoistureSensorA(4, SOIL_1_PIN, "Soil Moisture 1", 3009, 1290, 2587, 2250);
     SoilMoistureSensor soilMoistureSensorB(5, SOIL_2_PIN, "Soil Moisture 2", 2909, 900, 2462, 2172);
+    WaterPump waterPump(6, PUMP_PIN, "Bomba agua");
     EnumsSwitch enumsSwitch = EnumsSwitch();
 }
 
@@ -38,6 +40,7 @@ void Sensors::GetDataFromSensors(bool opt)
     std::array<SensorReading, 2> sht40Readings = sht40Sensor.GetBothReadings();
     SensorReading soilMoistureSensorAReading = soilMoistureSensorA.GetSensorData();
     SensorReading soilMoistureSensorBReading = soilMoistureSensorB.GetSensorData();
+    ActuatorData actuatorData = waterPump.GetActuatorData();
 
     if (opt)
     {
@@ -50,7 +53,9 @@ void Sensors::GetDataFromSensors(bool opt)
         sensors.push_back(soilMoistureSensorAReading);
         sensors.push_back(soilMoistureSensorBReading);
         
-        PrintData(sensors);
+        PrintSensorData(sensors);
+
+        PrintActuatorData(actuatorData);
     }
 }
 
@@ -61,7 +66,7 @@ void Sensors::InitializeWire()
 }
 
 // imprime los datos de todos los sensores incluidos en el arreglo
-void Sensors::PrintData(std::vector<SensorReading> sensors)
+void Sensors::PrintSensorData(std::vector<SensorReading> sensors)
 {
     for(int i = 0; i < sensors.size(); i++)
     {
@@ -81,4 +86,19 @@ void Sensors::PrintData(std::vector<SensorReading> sensors)
         Serial.print("|");
         Serial.print("\n");
     }
+}
+
+void Sensors::PrintActuatorData(ActuatorData actuatorData)
+{
+    Serial.print("\n");
+    Serial.print(actuatorData.actuatorId);
+    Serial.print("|");
+    Serial.print(actuatorData.actuatorName.c_str());
+    Serial.print("|");
+    Serial.print(actuatorData.actuatorPin);
+    Serial.print("|");
+    Serial.print(enumsSwitch.ConnectionTypeName(actuatorData.connType).c_str());
+    Serial.print("|");
+    Serial.print(actuatorData.value);
+    Serial.print("\n");
 }
