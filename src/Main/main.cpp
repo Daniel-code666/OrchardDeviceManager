@@ -38,5 +38,7 @@ void loop()
   {
     lastRead = currentTime;
     sensors.GetDataFromSensors(true);
+    sensors.SetWaterPumpMode(1);
+    // sensors.SetWaterPumpState(0);
   }
 }

@@ -2,6 +2,12 @@
 #include "Constants/Constants.h"
 #include <string>
 #include <Arduino.h>
+#include <Utils/EnumsSwitch.h>
+
+namespace
+{
+    EnumsSwitch enumsSwitch = EnumsSwitch();
+}
 
 WaterPump::WaterPump(int id, int pin, std::string actuatorName) : Device(id, pin, actuatorName, ConnectionType::Digital)
 {
@@ -10,7 +16,8 @@ WaterPump::WaterPump(int id, int pin, std::string actuatorName) : Device(id, pin
 // inicializa la bomba con el estado apagado
 void WaterPump::Init()
 {
-    digitalWrite(devicePin, false);
+    digitalWrite(devicePin, LOW);
+    pinMode(devicePin, OUTPUT);
 }
 
 // devuelve el estado funcional de la bomba en términos de true/false 
@@ -26,48 +33,32 @@ bool WaterPump::GetState()
     return false;
 }
 
-// establece el estado funcional de la bomba, manualSet sobrescribe el comportamiento automático activando/desactivando la bomba de manera inmediata
-bool WaterPump::SetState(bool state, bool manualSet, bool autoSet, float moisturePercentage, float drySoilPercentage, float wetSoilPercentage)
+// establece el estado funcional de la bomba, state puede ser null
+bool WaterPump::SetState(float moisturePercentage, float drySoilPercentage, float wetSoilPercentage, std::optional<bool> state)
 {
     int digitalRawValue = digitalRead(devicePin);
 
-    if (manualSet)
+    if (mode == PumpControlMode::Manual && state.has_value())
     {
-        if (digitalRawValue != state)
-        {
-            digitalWrite(devicePin, state);
-
-            Serial.print("ESTADO DE LA BOMBA ESTABLECIDO");
-            Serial.print("\nESTADO DE LA BOMBA\n");
-            Serial.print(digitalRawValue);
-            Serial.print("\nESTADO ENVIADO\n");
-            Serial.print(state);
-            Serial.print("\n");
-
-            return true;
-        }
-        else
-        {
-            Serial.print("BOMBA CON EL ESTADO ACTUAL QUE SE INTENTA ESTABLECER\n");
-            Serial.print("\nESTADO DE LA BOMBA\n");
-            Serial.print(digitalRawValue);
-            Serial.print("\nESTADO ENVIADO\n");
-            Serial.print(state);
-            Serial.print("\n");
-
+        if (digitalRawValue == state.value())
             return false;
-        }
+
+        digitalWrite(devicePin, state.value() ? HIGH : LOW);
+
+        Serial.println("ESTADO MANUAL DE LA BOMBA MODIFICADO");
+
+        return true;
     }
-    else if (autoSet && !manualSet) 
+    else if (mode == PumpControlMode::Automatic) 
     {
-        if (moisturePercentage <= drySoilPercentage)
+        if (moisturePercentage <= drySoilPercentage && !digitalRawValue)
         {
             Serial.print("BOMBA DE AGUA ACTIVA, REGANDO PLANTAS");
             digitalWrite(devicePin, true);
 
             return true;
         }
-        else if (moisturePercentage >= wetSoilPercentage)
+        else if (moisturePercentage >= wetSoilPercentage && digitalRawValue)
         {
             Serial.print("BOMBA DE AGUA INACTIVA");
             digitalWrite(devicePin, false);
@@ -81,6 +72,7 @@ bool WaterPump::SetState(bool state, bool manualSet, bool autoSet, float moistur
     return false;
 }
 
+// obtiene la información básica del actuador
 ActuatorData WaterPump::GetActuatorData()
 {
     int digitalRawValue = digitalRead(devicePin);
@@ -90,6 +82,29 @@ ActuatorData WaterPump::GetActuatorData()
         deviceName,
         devicePin,
         connType,
+        mode,
         static_cast<float>(digitalRawValue)
     };
+}
+
+// obtiene el modo de control de la bomba
+std::string WaterPump::GetControlMode()
+{
+    return enumsSwitch.PumpControlModeName(mode);
+}
+
+// establece el modo de control de la bomba 1: manual 2: automático
+bool WaterPump::SetMode(int opt)
+{
+    switch (opt)
+    {
+        case 1:
+            mode = PumpControlMode::Manual;
+            return true;
+        case 2:
+            mode = PumpControlMode::Automatic;
+            return true;
+        default:
+            return false;
+    }
 }

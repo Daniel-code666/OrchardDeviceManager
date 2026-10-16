@@ -10,7 +10,7 @@ std::string EnumsSwitch::MeasurementTypesName(MeasurementType measurementType)
         case MeasurementType::AirHumidity: return "AirHumidity";
         case MeasurementType::Illuminance: return "Illuminance";
         case MeasurementType::SoilMoisture: return "SoilMoisture";
-        default: return "Desconocido";
+        default: return "Unknow";
     }
 }
 
@@ -21,7 +21,7 @@ std::string EnumsSwitch::MeasurementUnitsName(MeasurementUnits measurementUnits)
         case MeasurementUnits::Celsius: return "Celsius";
         case MeasurementUnits::Lux: return "Lux";
         case MeasurementUnits::Percentage: return "Percentage";
-        default: return "Desconocido";
+        default: return "Unknow";
     }
 }
 
@@ -33,6 +33,16 @@ std::string EnumsSwitch::ConnectionTypeName(ConnectionType connType)
         case ConnectionType::Digital: return "Digital";
         case ConnectionType::I2C: return "I2C";
         case ConnectionType::OneWire: return "OneWire";
-        default: return "Desconocido";
+        default: return "Unknow";
+    }
+}
+
+std::string EnumsSwitch::PumpControlModeName(PumpControlMode pumpControlMode)
+{
+    switch (pumpControlMode)
+    {
+        case PumpControlMode::Automatic: return "Automatic";
+        case PumpControlMode::Manual: return "Manual";
+        default: return "Unknow";
     }
 }

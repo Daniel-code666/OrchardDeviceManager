@@ -33,15 +33,19 @@ void Sensors::InitializeSensors()
     waterPump.Init();
 }
 
-bool Sensors::SetWaterPumpState(bool state, bool manualSet)
+// establece el estado para el funcionamiento de la bomba, sin estado = automático, 1 encendida, 0 apagada
+bool Sensors::SetWaterPumpState(std::optional<bool> state)
 {
+    // si state tiene valor quiere decir que la bomba está siendo accionada de manera manual, automático de lo contrario
+    if (state.has_value())
+        waterPump.SetMode(1);
+    else
+        waterPump.SetMode(2);
+
     AddedSoilSensorsReadings totalSoilData = SumSoilReadings();
 
-    bool autoSet = manualSet ? false : true;
-
-    bool isSetted = waterPump.SetState(state, manualSet, autoSet, totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues);
-
-    return isSetted;
+    // el valor de state puede ser null
+    return waterPump.SetState(totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues, state);
 }
 
 // obtiene los valores de los sensores, opt = true imprime en consola, false lo contrario
@@ -111,6 +115,8 @@ void Sensors::PrintActuatorData(ActuatorData actuatorData)
     Serial.print("|");
     Serial.print(enumsSwitch.ConnectionTypeName(actuatorData.connType).c_str());
     Serial.print("|");
+    Serial.print(enumsSwitch.PumpControlModeName(actuatorData.mode).c_str());
+    Serial.print("|");
     Serial.print(actuatorData.value);
     Serial.print("\n");
 }
@@ -125,4 +131,9 @@ AddedSoilSensorsReadings Sensors::SumSoilReadings()
         soilMoistureSensorA.GetWetSoilPercentage() + soilMoistureSensorB.GetWetSoilPercentage(),
         soilMoistureSensorAReading.value + soilMoistureSensorBReading.value
     };
+}
+
+bool Sensors::SetWaterPumpMode(int opt)
+{
+    return waterPump.SetMode(opt);
 }
