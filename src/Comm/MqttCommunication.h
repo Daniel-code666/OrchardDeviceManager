@@ -5,18 +5,20 @@
 #include <WiFiClient.h>
 #include <PubSubClient.h>
 #include "../Secrets.h"
+#include "../Objects/FullTelemetry.h"
 
 class MqttCommunication
 {
     public:
-        explicit MqttCommunication(const char* brokerHost, uint16_t brokerPort, const char* clientId);
+        explicit MqttCommunication(const char* brokerHost, uint16_t brokerPort, const char* clientId, const char* brokerUser, const char* brokerPass);
         
-        void init();
-        bool connect();
-        bool isConnected();
-        void publishTelemetry();
-        void loop(); 
-        void checkNetworks();
+        void Init();
+        bool Connect();
+        bool IsConnected();
+        bool PublishTelemetry(FullTelemetry fullTelemetry);
+        void Loop(); 
+        void CheckNetworks();
+        void TestBrokerConnection();
 
     private:
         WiFiClient wifiClient;
@@ -25,6 +27,8 @@ class MqttCommunication
         const char* brokerHost;
         const uint16_t brokerPort;
         const char* clientId;
+        const char* brokerUser;
+        const char* brokerPass;
 };
 
 #endif

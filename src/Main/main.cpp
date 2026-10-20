@@ -9,20 +9,22 @@
 namespace
 {
     Sensors sensors = Sensors();
-    MqttCommunication comm = MqttCommunication(MQTT_HOST, MQTT_PORT, MQTT_CLIENT_ID);
+    MqttCommunication comm = MqttCommunication(MQTT_HOST, MQTT_PORT, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD);
     unsigned long lastRead = 0;
 }
 
-void WiFiConn()
+bool WiFiConn()
 {
     if (WiFi.status() == WL_CONNECTED)
     {
         Serial.print("\nWiFi conectado | IP: \n");
         Serial.println(WiFi.localIP());
+        return true;
     }
     else
     {
         Serial.println("\nWiFi no conectado\n");
+        return false;
     }
 }
 
@@ -31,20 +33,13 @@ void setup()
 //     put your setup code here, to run once:
     Serial.begin(115200);
 
-    unsigned long start = millis();
-
-    while (!Serial && millis() - start < 3000)
-    {
-        delay(10);
-    }
-
     sensors.InitializeSensors();
-    comm.init();
+    comm.Init();
 
     Serial.print("Sensores inicializados...\n");
     Serial.print("LECTURAS OBTENIDAS \n");
 
-    sensors.GetDataFromSensors(true);
+    // sensors.GetDataFromSensors(true);
     lastRead = millis();
 }
 
@@ -56,10 +51,15 @@ void loop()
     {
         lastRead = currentTime;
 
-        WiFiConn();
+        if (WiFiConn())
+        {
+            comm.Connect();
+        }
 
         FullTelemetry fullTelemetry = sensors.GetDataFromSensors(true);
         sensors.SetWaterPumpMode(1);
+        
+        comm.PublishTelemetry(fullTelemetry);
         //sensors.SetWaterPumpState();
     }
 }
