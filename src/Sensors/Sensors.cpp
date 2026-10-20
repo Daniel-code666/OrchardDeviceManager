@@ -49,8 +49,9 @@ bool Sensors::SetWaterPumpState(std::optional<bool> state)
 }
 
 // obtiene los valores de los sensores, opt = true imprime en consola, false lo contrario
-void Sensors::GetDataFromSensors(bool opt)
+FullTelemetry Sensors::GetDataFromSensors(bool opt)
 {
+    FullTelemetry fullTelemetry;
     SensorReading ds18b20Reading = ds18b20Sensor.GetSensorData();
     SensorReading bh1750Reading = bh1750Sensor.GetSensorData();
     std::array<SensorReading, 2> sht40Readings = sht40Sensor.GetBothReadings();
@@ -58,21 +59,24 @@ void Sensors::GetDataFromSensors(bool opt)
     SensorReading soilMoistureSensorBReading = soilMoistureSensorB.GetSensorData();
     ActuatorData actuatorData = waterPump.GetActuatorData();
 
+    fullTelemetry.actuatorsData.push_back(actuatorData);
+
+    fullTelemetry.sensorReadings = {
+        ds18b20Reading,
+        bh1750Reading,
+        soilMoistureSensorAReading,
+        soilMoistureSensorBReading
+    };
+
+    fullTelemetry.sensorReadings.insert(fullTelemetry.sensorReadings.end(), sht40Readings.begin(), sht40Readings.end());
+
     if (opt)
-    {
-        std::vector<SensorReading> sensors;
-
-        sensors.push_back(ds18b20Reading);
-        sensors.push_back(bh1750Reading);
-        sensors.push_back(sht40Readings[0]);
-        sensors.push_back(sht40Readings[1]);
-        sensors.push_back(soilMoistureSensorAReading);
-        sensors.push_back(soilMoistureSensorBReading);
-        
-        PrintSensorData(sensors);
-
-        PrintActuatorData(actuatorData);
+    {   
+        PrintSensorData(fullTelemetry.sensorReadings);
+        PrintActuatorData(fullTelemetry.actuatorsData);
     }
+
+    return fullTelemetry;
 }
 
 // inicializa WIRE para el bh1750
@@ -104,21 +108,24 @@ void Sensors::PrintSensorData(std::vector<SensorReading> sensors)
     }
 }
 
-void Sensors::PrintActuatorData(ActuatorData actuatorData)
+void Sensors::PrintActuatorData(std::vector<ActuatorData> actuatorsData)
 {
-    Serial.print("\n");
-    Serial.print(actuatorData.actuatorId);
-    Serial.print("|");
-    Serial.print(actuatorData.actuatorName.c_str());
-    Serial.print("|");
-    Serial.print(actuatorData.actuatorPin);
-    Serial.print("|");
-    Serial.print(enumsSwitch.ConnectionTypeName(actuatorData.connType).c_str());
-    Serial.print("|");
-    Serial.print(enumsSwitch.PumpControlModeName(actuatorData.mode).c_str());
-    Serial.print("|");
-    Serial.print(actuatorData.value);
-    Serial.print("\n");
+    for (int i = 0; i < actuatorsData.size(); i++)
+    {
+        Serial.print("\n");
+        Serial.print(actuatorsData[i].actuatorId);
+        Serial.print("|");
+        Serial.print(actuatorsData[i].actuatorName.c_str());
+        Serial.print("|");
+        Serial.print(actuatorsData[i].actuatorPin);
+        Serial.print("|");
+        Serial.print(enumsSwitch.ConnectionTypeName(actuatorsData[i].connType).c_str());
+        Serial.print("|");
+        Serial.print(enumsSwitch.PumpControlModeName(actuatorsData[i].mode).c_str());
+        Serial.print("|");
+        Serial.print(actuatorsData[i].value);
+        Serial.print("\n");
+    }
 }
 
 AddedSoilSensorsReadings Sensors::SumSoilReadings()

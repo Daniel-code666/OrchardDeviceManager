@@ -6,17 +6,18 @@
 #include "../Objects/ActuatorData.h"
 #include "../Objects/AddedSoilSensorsReadings.h"
 #include <optional>
+#include "../Objects/FullTelemetry.h"
 
 class Sensors {
     public:
         void InitializeSensors();
-        void GetDataFromSensors(bool opt);
+        FullTelemetry GetDataFromSensors(bool opt);
         bool SetWaterPumpState(std::optional<bool> state = std::nullopt);
         bool SetWaterPumpMode(int opt);
     private:
         void InitializeWire();
         void PrintSensorData(std::vector<SensorReading> sensors);
-        void PrintActuatorData(ActuatorData actuatorData);
+        void PrintActuatorData(std::vector<ActuatorData> actuatorData);
         AddedSoilSensorsReadings SumSoilReadings();
 };
 
