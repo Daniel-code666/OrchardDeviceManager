@@ -1,14 +1,11 @@
 #include "Sensors.h"
+#include "../Utils/EnumsSwitch.h"
 #include "../Devices/DS18B20/DS18B20Sensor.h"
 #include "../Devices/BH1750/BH1750Sensor.h"
 #include "../Devices/SHT40/SHT40Sensor.h"
 #include "../Devices/SoilMoisture/SoilMoistureSensor.h"
 #include "../Devices/WaterPump/WaterPump.h"
 #include "../Constants/Constants.h"
-#include "../Utils/EnumsSwitch.h"
-
-#include <Wire.h>
-#include <vector>
 
 // declaración global de instancias únicamente para la clase actual
 namespace
@@ -20,8 +17,40 @@ namespace
     SoilMoistureSensor soilMoistureSensorB(5, SOIL_2_PIN, "Soil Moisture 2", 2909, 900, 2462, 2172);
     WaterPump waterPump(6, PUMP_PIN, "Bomba agua");
     EnumsSwitch enumsSwitch = EnumsSwitch();
+}
 
-    // registrar instancia con su id respectivo
+// constructor
+Sensors::Sensors()
+{}
+
+void Sensors::RegisterIdInstance()
+{
+    sensorRegistry = {{{ds18b20Sensor.GetDeviceId(), [](FullTelemetry &data)
+                        {
+                            data.sensorReadings.push_back(ds18b20Sensor.GetSensorData());
+                        }},
+                       {bh1750Sensor.GetDeviceId(), [](FullTelemetry &data)
+                        {
+                            data.sensorReadings.push_back(bh1750Sensor.GetSensorData());
+                        }},
+                       {sht40Sensor.GetDeviceId(), [](FullTelemetry &data)
+                        {
+                            auto readings = sht40Sensor.GetBothReadings();
+                            data.sensorReadings.insert(data.sensorReadings.end(), readings.begin(), readings.end());
+                        }},
+                       {soilMoistureSensorA.GetDeviceId(), [](FullTelemetry &data)
+                        {
+                            data.sensorReadings.push_back(soilMoistureSensorA.GetSensorData());
+                        }},
+                       {soilMoistureSensorB.GetDeviceId(), [](FullTelemetry &data)
+                        {
+                            data.sensorReadings.push_back(soilMoistureSensorB.GetSensorData());
+                        }}}};
+
+    actuatorRegistry = {{{waterPump.GetDeviceId(), [](FullTelemetry &data)
+                          {
+                              data.actuatorsData.push_back(waterPump.GetActuatorData());
+                          }}}};
 }
 
 // inicializa los sensores
@@ -33,6 +62,8 @@ void Sensors::InitializeSensors()
     bh1750Sensor.Init();
     sht40Sensor.Init();
     waterPump.Init();
+
+    RegisterIdInstance();
 }
 
 // establece el estado para el funcionamiento de la bomba, sin estado = automático, 1 encendida, 0 apagada
@@ -109,6 +140,7 @@ void Sensors::PrintSensorData(std::vector<SensorReading> sensors)
     }
 }
 
+// imprime en consola los datos de los actuadores existentes
 void Sensors::PrintActuatorData(std::vector<ActuatorData> actuatorsData)
 {
     for (int i = 0; i < actuatorsData.size(); i++)
@@ -129,6 +161,7 @@ void Sensors::PrintActuatorData(std::vector<ActuatorData> actuatorsData)
     }
 }
 
+// unifica las lecturas del sensor de suelo
 AddedSoilSensorsReadings Sensors::SumSoilReadings()
 {
     SensorReading soilMoistureSensorAReading = soilMoistureSensorA.GetSensorData();
@@ -140,27 +173,37 @@ AddedSoilSensorsReadings Sensors::SumSoilReadings()
         soilMoistureSensorAReading.value + soilMoistureSensorBReading.value};
 }
 
+// establece el modo de la bomba de agua: 1 manual, 2 automático
 bool Sensors::SetWaterPumpMode(int opt)
 {
     return waterPump.SetMode(opt);
 }
 
-FullTelemetry Sensors::GetSensorOrActuatorDataById(DeviceIdByType deviceIdByType)
+FullTelemetry Sensors::GetSensorOrActuatorDataById(DeviceIdByType &deviceIdByType)
 {
     FullTelemetry fullTelemetry;
-    std::vector<int> sensorIds = {deviceIdByType.sensorIds};
-    std::vector<int> actuatorIds = {deviceIdByType.actuatorIds};
 
-    // valida que cualquiera de los dos arreglos contenga algo
-    if (sensorIds.size() > 1 || actuatorIds.size() > 1)
+    for (int id : deviceIdByType.sensorIds)
     {
-        for (int i = 0; i <= sensorIds.size(); i++)
+        for (const auto &device : sensorRegistry)
         {
-
+            if (device.id == id)
+            {
+                device.read(fullTelemetry);
+                break;
+            }
         }
+    }
 
-        for (int j = 0; j <= actuatorIds.size(); j++)
+    for (int id : deviceIdByType.actuatorIds)
+    {
+        for (const auto &actuator : actuatorRegistry)
         {
+            if (actuator.id == id)
+            {
+                actuator.read(fullTelemetry);
+                break;
+            }
         }
     }
 

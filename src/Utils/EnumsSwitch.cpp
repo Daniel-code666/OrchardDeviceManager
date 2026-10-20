@@ -56,21 +56,19 @@ std::string EnumsSwitch::TopicsName(Topics topic)
     }
 }
 
-DeviceIdByType EnumsSwitch::OrganizeIdsByType(ActionMessage actionMessage)
+DeviceIdByType EnumsSwitch::OrganizeIdsByType(ActionMessage& actionMessage)
 {
     DeviceIdByType deviceIdByType;
-    std::vector<ParamsBody> paramsData = { actionMessage.params };
 
-    for(int i = 0; i < paramsData.size(); i++)
+    for (const ParamsBody& param : actionMessage.params)
     {
-        if (paramsData[i].deviceType == DeviceType::Sensor)
+        if (param.deviceType == DeviceType::Sensor)
         {
-            deviceIdByType.sensorIds.push_back(paramsData[i].deviceId);
+            deviceIdByType.sensorIds.push_back(param.deviceId);
         }
-
-        if (paramsData[i].deviceType == DeviceType::Actuator)
+        else if (param.deviceType == DeviceType::Actuator)
         {
-            deviceIdByType.actuatorIds.push_back(paramsData[i].deviceId);
+            deviceIdByType.actuatorIds.push_back(param.deviceId);
         }
     }
 

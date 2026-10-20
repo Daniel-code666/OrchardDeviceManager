@@ -20,7 +20,7 @@ class EnumsSwitch
         std::string ConnectionTypeName(ConnectionType connType);
         std::string PumpControlModeName(PumpControlMode pumpControlMode);
         std::string TopicsName(Topics topic);
-        DeviceIdByType OrganizeIdsByType(ActionMessage actionMessage);
+        DeviceIdByType OrganizeIdsByType(ActionMessage& actionMessage);
 };
 
 #endif

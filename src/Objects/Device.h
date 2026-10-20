@@ -14,6 +14,7 @@ class Device
         virtual ~Device() = default;
 
         virtual void Init() = 0;
+        int GetDeviceId();
     protected:
         const int deviceId;
         const uint8_t devicePin;
