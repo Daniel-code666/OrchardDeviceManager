@@ -20,7 +20,7 @@ class WaterPump : public Device
         ActuatorData GetActuatorData();
 
     private:
-        PumpControlMode mode = PumpControlMode::Automatic;
+        PumpControlMode mode = PumpControlMode::Manual;
 };
 
 #endif

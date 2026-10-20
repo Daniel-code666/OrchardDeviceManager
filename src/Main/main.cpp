@@ -54,10 +54,14 @@ void loop()
         if (WiFiConn())
         {
             comm.Connect();
+            
+            if (comm.IsConnected())
+            {
+                comm.Loop();
+            }
         }
 
         FullTelemetry fullTelemetry = sensors.GetDataFromSensors(true);
-        sensors.SetWaterPumpMode(1);
         
         comm.PublishTelemetry(fullTelemetry);
         //sensors.SetWaterPumpState();

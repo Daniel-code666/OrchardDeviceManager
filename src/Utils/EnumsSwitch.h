@@ -7,6 +7,10 @@
 #include "../Objects/ConnectionType.h"
 #include "../Objects/PumpControlMode.h"
 #include "../Objects/Topics.h"
+#include "../Objects/ActionMessage.h"
+#include <vector>
+#include "Objects/DeviceType.h"
+#include "Objects/DeviceIdByType.h"
 
 class EnumsSwitch
 {
@@ -16,6 +20,7 @@ class EnumsSwitch
         std::string ConnectionTypeName(ConnectionType connType);
         std::string PumpControlModeName(PumpControlMode pumpControlMode);
         std::string TopicsName(Topics topic);
+        DeviceIdByType OrganizeIdsByType(ActionMessage actionMessage);
 };
 
 #endif

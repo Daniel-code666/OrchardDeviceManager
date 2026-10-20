@@ -20,6 +20,8 @@ namespace
     SoilMoistureSensor soilMoistureSensorB(5, SOIL_2_PIN, "Soil Moisture 2", 2909, 900, 2462, 2172);
     WaterPump waterPump(6, PUMP_PIN, "Bomba agua");
     EnumsSwitch enumsSwitch = EnumsSwitch();
+
+    // registrar instancia con su id respectivo
 }
 
 // inicializa los sensores
@@ -65,13 +67,12 @@ FullTelemetry Sensors::GetDataFromSensors(bool opt)
         ds18b20Reading,
         bh1750Reading,
         soilMoistureSensorAReading,
-        soilMoistureSensorBReading
-    };
+        soilMoistureSensorBReading};
 
     fullTelemetry.sensorReadings.insert(fullTelemetry.sensorReadings.end(), sht40Readings.begin(), sht40Readings.end());
 
     if (opt)
-    {   
+    {
         PrintSensorData(fullTelemetry.sensorReadings);
         PrintActuatorData(fullTelemetry.actuatorsData);
     }
@@ -88,7 +89,7 @@ void Sensors::InitializeWire()
 // imprime los datos de todos los sensores incluidos en el arreglo
 void Sensors::PrintSensorData(std::vector<SensorReading> sensors)
 {
-    for(int i = 0; i < sensors.size(); i++)
+    for (int i = 0; i < sensors.size(); i++)
     {
         Serial.print(sensors[i].sensorId);
         Serial.print("|");
@@ -136,11 +137,32 @@ AddedSoilSensorsReadings Sensors::SumSoilReadings()
     return {
         soilMoistureSensorA.GetDrySoilPercentage() + soilMoistureSensorB.GetDrySoilPercentage(),
         soilMoistureSensorA.GetWetSoilPercentage() + soilMoistureSensorB.GetWetSoilPercentage(),
-        soilMoistureSensorAReading.value + soilMoistureSensorBReading.value
-    };
+        soilMoistureSensorAReading.value + soilMoistureSensorBReading.value};
 }
 
 bool Sensors::SetWaterPumpMode(int opt)
 {
     return waterPump.SetMode(opt);
+}
+
+FullTelemetry Sensors::GetSensorOrActuatorDataById(DeviceIdByType deviceIdByType)
+{
+    FullTelemetry fullTelemetry;
+    std::vector<int> sensorIds = {deviceIdByType.sensorIds};
+    std::vector<int> actuatorIds = {deviceIdByType.actuatorIds};
+
+    // valida que cualquiera de los dos arreglos contenga algo
+    if (sensorIds.size() > 1 || actuatorIds.size() > 1)
+    {
+        for (int i = 0; i <= sensorIds.size(); i++)
+        {
+
+        }
+
+        for (int j = 0; j <= actuatorIds.size(); j++)
+        {
+        }
+    }
+
+    return fullTelemetry;
 }

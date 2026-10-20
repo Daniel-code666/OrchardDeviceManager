@@ -17,7 +17,7 @@ constexpr uint8_t I2C_SCL_PIN = 6;
 constexpr uint8_t SOIL_TEMP_PIN = 7;
 
 // CONSTANTE DE TIEMPO PARA LECTURA
-constexpr unsigned long READ_INTERVAL = 5000;
+constexpr unsigned long READ_INTERVAL = 30000;
 
 // CONSTANTE PARA REPRESENTAR NO PIN
 constexpr uint8_t NO_PIN = 0xFF;

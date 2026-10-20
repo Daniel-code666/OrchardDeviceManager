@@ -1,4 +1,3 @@
-#include <string>
 #include "EnumsSwitch.h"
 
 std::string EnumsSwitch::MeasurementTypesName(MeasurementType measurementType)
@@ -55,4 +54,25 @@ std::string EnumsSwitch::TopicsName(Topics topic)
         case Topics::Actions: return "Actions";
         default: return "Unknow";
     }
+}
+
+DeviceIdByType EnumsSwitch::OrganizeIdsByType(ActionMessage actionMessage)
+{
+    DeviceIdByType deviceIdByType;
+    std::vector<ParamsBody> paramsData = { actionMessage.params };
+
+    for(int i = 0; i < paramsData.size(); i++)
+    {
+        if (paramsData[i].deviceType == DeviceType::Sensor)
+        {
+            deviceIdByType.sensorIds.push_back(paramsData[i].deviceId);
+        }
+
+        if (paramsData[i].deviceType == DeviceType::Actuator)
+        {
+            deviceIdByType.actuatorIds.push_back(paramsData[i].deviceId);
+        }
+    }
+
+    return deviceIdByType;
 }

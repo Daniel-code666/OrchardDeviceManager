@@ -1,16 +1,79 @@
 #include "MqttCommunication.h"
 #include "Objects/Topics.h"
 #include "../Utils/EnumsSwitch.h"
+#include <ArduinoJson.h>
+#include <string.h>
 
 namespace
 {
     EnumsSwitch enumSwitch = EnumsSwitch();
 }
 
+// constructor
 MqttCommunication::MqttCommunication(const char *brokerHost, uint16_t brokerPort, const char *clientId,
                                      const char *brokerUser, const char *brokerPass) : wifiClient(), mqttClient(wifiClient), brokerHost(brokerHost), brokerPort(brokerPort), clientId(clientId),
                                                                                        brokerUser(brokerUser), brokerPass(brokerPass) {};
 
+// valida la conexión wifi y conexión al broker
+bool MqttCommunication::CheckWifiBrokerConnection()
+{
+    bool wifiStatus = true;
+    bool brokerStatus = true;
+
+    // validar conexión a wifi
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.print("\nConexión a mqtt, validación de wifi: no conectado\n");
+        wifiStatus = false;
+    }
+
+    // validar conexión al broker
+    if (!mqttClient.connected())
+    {
+        Serial.print("\nConexión a mqtt, validación de conexión a broker: no conectado\n");
+        brokerStatus  = false;
+    }
+
+    return wifiStatus && brokerStatus;
+}
+
+// crea el json para luego parcearlo
+JsonDocument LoadDataIntoJson(FullTelemetry &fullTelemetry)
+{
+    JsonDocument doc;
+
+    JsonArray sensors = doc["sensorReadings"].to<JsonArray>();
+    JsonArray actuators = doc["actuatorReadings"].to<JsonArray>();
+
+    for (const SensorReading &reading : fullTelemetry.sensorReadings)
+    {
+        JsonObject sensor = sensors.add<JsonObject>();
+
+        sensor["id"] = reading.sensorId;
+        sensor["name"] = reading.sensorName;
+        sensor["measurementType"] = enumSwitch.MeasurementTypesName(reading.measurementInfo.type);
+        sensor["measurementUnit"] = enumSwitch.MeasurementUnitsName(reading.measurementInfo.unit);
+        sensor["esp32Pin"] = reading.sensorPin;
+        sensor["connType"] = enumSwitch.ConnectionTypeName(reading.connType);
+        sensor["value"] = reading.value;
+    }
+
+    for (const ActuatorData &data : fullTelemetry.actuatorsData)
+    {
+        JsonObject actuator = actuators.add<JsonObject>();
+
+        actuator["id"] = data.actuatorId;
+        actuator["name"] = data.actuatorName;
+        actuator["esp32Pin"] = data.actuatorPin;
+        actuator["connType"] = enumSwitch.ConnectionTypeName(data.connType);
+        actuator["mode"] = enumSwitch.PumpControlModeName(data.mode);
+        actuator["state"] = data.value;
+    }
+
+    return doc;
+}
+
+// validación al momento de cualquier evento de wifi
 void OnWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 {
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
@@ -39,24 +102,16 @@ void MqttCommunication::Init()
     // configura el servidor para la conexión a rabbit
     mqttClient.setServer(brokerHost, brokerPort);
 
+    // establece el tamaño del buffer
+    mqttClient.setBufferSize(2048);
+
     Serial.println("\nWiFi inicializado. Esperando conexion...\n");
 };
 
 bool MqttCommunication::Connect()
 {
-    // validar conexión a wifi
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.print("\nConexión a mqtt, validación de wifi: no conectado\n");
+    if (!CheckWifiBrokerConnection())
         return false;
-    }
-
-    // validar conexión al broker
-    if (mqttClient.connected())
-    {
-        Serial.print("\nConexión a mqtt, validación de conexión a broker: conectado\n");
-        return true;
-    }
 
     // conectar al broker
     bool connected = mqttClient.connect(clientId, brokerUser, brokerPass);
@@ -70,6 +125,8 @@ bool MqttCommunication::Connect()
         return false;
     }
 
+    mqttClient.subscribe(enumSwitch.TopicsName(Topics::Actions).c_str());
+
     // devuelve el estado de la conexión
     Serial.print("\nConectado al broker\n");
     return true;
@@ -80,8 +137,10 @@ bool MqttCommunication::IsConnected()
     return mqttClient.connected();
 }
 
-bool MqttCommunication::PublishTelemetry(FullTelemetry fullTelemetry)
+bool MqttCommunication::PublishTelemetry(FullTelemetry &fullTelemetry)
 {
+    std::string payload;
+
     if (!mqttClient.connected())
     {
         Serial.print("\nMensaje no enviado, no conectado al broker:\n");
@@ -90,12 +149,56 @@ bool MqttCommunication::PublishTelemetry(FullTelemetry fullTelemetry)
         return false;
     }
 
-    bool published = mqttClient.publish(enumSwitch.TopicsName(Topics::Telemetry).c_str(), "Mensaje enviado al tópico");
+    JsonDocument doc = LoadDataIntoJson(fullTelemetry);
+    serializeJson(doc, payload);
+
+    bool published = mqttClient.publish(enumSwitch.TopicsName(Topics::Telemetry).c_str(), payload.c_str());
 
     Serial.print("\nMensaje enviado, publicado:\n");
     Serial.print(published);
 
     return published;
+}
+
+bool MqttCommunication::Loop()
+{
+    mqttClient.loop();
+
+    // validar conexión a wifi
+    if (!CheckWifiBrokerConnection())
+        return false;
+
+    static unsigned long lastReconnAttempt = 0;
+    constexpr unsigned long RECONN_INTERVAL = 5000;
+
+    unsigned long currTime = millis();
+
+    if (currTime - lastReconnAttempt >= RECONN_INTERVAL)
+    {
+        lastReconnAttempt = currTime;
+        return Connect();
+    }
+
+    return false;
+}
+
+// consume los mensajes de la cola "Actions" y actua en consecuencia
+bool MqttCommunication::ConsumeActions()
+{
+    // verifica la conexión al broker y al wifi
+    if (!CheckWifiBrokerConnection())
+        return false;
+
+    // lee los mensajes de "Actions"
+
+
+    // deserializa los datos para identificar los actuadores y el comando
+
+    // organiza los comandos y establece el actuador indicado
+
+    // ejecuta el comando
+
+    return true;
 }
 
 void MqttCommunication::TestBrokerConnection()

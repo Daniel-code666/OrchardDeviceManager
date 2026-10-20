@@ -7,6 +7,7 @@
 #include "../Objects/AddedSoilSensorsReadings.h"
 #include <optional>
 #include "../Objects/FullTelemetry.h"
+#include "../Objects/DeviceIdByType.h"
 
 class Sensors {
     public:
@@ -14,6 +15,7 @@ class Sensors {
         FullTelemetry GetDataFromSensors(bool opt);
         bool SetWaterPumpState(std::optional<bool> state = std::nullopt);
         bool SetWaterPumpMode(int opt);
+        FullTelemetry GetSensorOrActuatorDataById(DeviceIdByType deviceIdByType);
     private:
         void InitializeWire();
         void PrintSensorData(std::vector<SensorReading> sensors);
