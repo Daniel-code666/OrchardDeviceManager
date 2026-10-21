@@ -14,29 +14,6 @@ MqttCommunication::MqttCommunication(const char *brokerHost, uint16_t brokerPort
                                      const char *brokerUser, const char *brokerPass) : wifiClient(), mqttClient(wifiClient), brokerHost(brokerHost), brokerPort(brokerPort), clientId(clientId),
                                                                                        brokerUser(brokerUser), brokerPass(brokerPass) {};
 
-// valida la conexión wifi y conexión al broker
-bool MqttCommunication::CheckWifiBrokerConnection()
-{
-    bool wifiStatus = true;
-    bool brokerStatus = true;
-
-    // validar conexión a wifi
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.print("\nConexión a mqtt, validación de wifi: no conectado\n");
-        wifiStatus = false;
-    }
-
-    // validar conexión al broker
-    if (!mqttClient.connected())
-    {
-        Serial.print("\nConexión a mqtt, validación de conexión a broker: no conectado\n");
-        brokerStatus  = false;
-    }
-
-    return wifiStatus && brokerStatus;
-}
-
 // crea el json para luego parcearlo
 JsonDocument LoadDataIntoJson(FullTelemetry &fullTelemetry)
 {
@@ -99,6 +76,12 @@ void MqttCommunication::Init()
     // inicia la conexión a la red
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        Serial.print("\nWiFi conectado | IP: \n");
+        Serial.println(WiFi.localIP());
+    }
+
     // configura el servidor para la conexión a rabbit
     mqttClient.setServer(brokerHost, brokerPort);
 
@@ -110,8 +93,11 @@ void MqttCommunication::Init()
 
 bool MqttCommunication::Connect()
 {
-    if (!CheckWifiBrokerConnection())
+    if (WiFi.status() != WL_CONNECTED)
         return false;
+
+    if (mqttClient.connected())
+        return true;
 
     // conectar al broker
     bool connected = mqttClient.connect(clientId, brokerUser, brokerPass);
@@ -162,11 +148,13 @@ bool MqttCommunication::PublishTelemetry(FullTelemetry &fullTelemetry)
 
 bool MqttCommunication::Loop()
 {
-    mqttClient.loop();
-
-    // validar conexión a wifi
-    if (!CheckWifiBrokerConnection())
+    if (WiFi.status() != WL_CONNECTED)
         return false;
+
+    if (mqttClient.connected())
+    {
+        return mqttClient.loop();
+    }
 
     static unsigned long lastReconnAttempt = 0;
     constexpr unsigned long RECONN_INTERVAL = 5000;
@@ -186,8 +174,6 @@ bool MqttCommunication::Loop()
 bool MqttCommunication::ConsumeActions()
 {
     // verifica la conexión al broker y al wifi
-    if (!CheckWifiBrokerConnection())
-        return false;
 
     // lee los mensajes de "Actions"
 

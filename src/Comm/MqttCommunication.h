@@ -30,8 +30,6 @@ class MqttCommunication
         const char* clientId;
         const char* brokerUser;
         const char* brokerPass;
-
-        bool CheckWifiBrokerConnection();
 };
 
 #endif

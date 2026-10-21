@@ -13,24 +13,9 @@ namespace
     unsigned long lastRead = 0;
 }
 
-bool WiFiConn()
-{
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.print("\nWiFi conectado | IP: \n");
-        Serial.println(WiFi.localIP());
-        return true;
-    }
-    else
-    {
-        Serial.println("\nWiFi no conectado\n");
-        return false;
-    }
-}
-
 void setup()
 {
-//     put your setup code here, to run once:
+    //put your setup code here, to run once:
     Serial.begin(115200);
 
     sensors.InitializeSensors();
@@ -45,25 +30,16 @@ void setup()
 
 void loop()
 {
+    comm.Loop();
+
     unsigned long currentTime = millis();
 
     if (currentTime - lastRead >= READ_INTERVAL)
     {
         lastRead = currentTime;
 
-        if (WiFiConn())
-        {
-            comm.Connect();
-            
-            if (comm.IsConnected())
-            {
-                comm.Loop();
-            }
-        }
-
         FullTelemetry fullTelemetry = sensors.GetDataFromSensors(true);
-        
+
         comm.PublishTelemetry(fullTelemetry);
-        //sensors.SetWaterPumpState();
     }
 }
