@@ -16,7 +16,6 @@ class MqttCommunication
         bool Connect();
         bool IsConnected();
         bool PublishTelemetry(FullTelemetry& fullTelemetry);
-        bool ConsumeActions();
         bool Loop(); 
         void CheckNetworks();
         void TestBrokerConnection();
@@ -30,6 +29,8 @@ class MqttCommunication
         const char* clientId;
         const char* brokerUser;
         const char* brokerPass;
+
+        void HandleMessage(char* topic, byte* payload, int length);
 };
 
 #endif

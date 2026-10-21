@@ -85,11 +85,28 @@ void MqttCommunication::Init()
     // configura el servidor para la conexión a rabbit
     mqttClient.setServer(brokerHost, brokerPort);
 
+    mqttClient.setCallback(
+        [this](char *topic, byte *payload, unsigned int length)
+        {
+            HandleMessage(topic, payload, length);
+        });
+
     // establece el tamaño del buffer
     mqttClient.setBufferSize(2048);
 
     Serial.println("\nWiFi inicializado. Esperando conexion...\n");
 };
+
+void MqttCommunication::HandleMessage(char *topic, byte *payload, int length)
+{
+    Serial.printf("\nMensaje recibido en: %s\n", topic);
+
+    Serial.print("\nContenido: \n");
+
+    Serial.write(payload, length);
+
+    Serial.println();
+}
 
 bool MqttCommunication::Connect()
 {
@@ -111,11 +128,41 @@ bool MqttCommunication::Connect()
         return false;
     }
 
-    mqttClient.subscribe(enumSwitch.TopicsName(Topics::Actions).c_str());
+    bool subscribed = mqttClient.subscribe(enumSwitch.TopicsName(Topics::Actions).c_str());
 
     // devuelve el estado de la conexión
     Serial.print("\nConectado al broker\n");
+
+    Serial.printf(
+        "Suscripcion MQTT | Topic: [%s] | Resultado: %s\n",
+        enumSwitch.TopicsName(Topics::Actions).c_str(),
+        subscribed ? "OK" : "ERROR");
+
     return true;
+}
+
+bool MqttCommunication::Loop()
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return false;
+
+    if (mqttClient.connected())
+    {
+        return mqttClient.loop();
+    }
+
+    static unsigned long lastReconnAttempt = 0;
+    constexpr unsigned long RECONN_INTERVAL = 5000;
+
+    unsigned long currTime = millis();
+
+    if (currTime - lastReconnAttempt >= RECONN_INTERVAL)
+    {
+        lastReconnAttempt = currTime;
+        return Connect();
+    }
+
+    return false;
 }
 
 bool MqttCommunication::IsConnected()
@@ -144,47 +191,6 @@ bool MqttCommunication::PublishTelemetry(FullTelemetry &fullTelemetry)
     Serial.print(published);
 
     return published;
-}
-
-bool MqttCommunication::Loop()
-{
-    if (WiFi.status() != WL_CONNECTED)
-        return false;
-
-    if (mqttClient.connected())
-    {
-        return mqttClient.loop();
-    }
-
-    static unsigned long lastReconnAttempt = 0;
-    constexpr unsigned long RECONN_INTERVAL = 5000;
-
-    unsigned long currTime = millis();
-
-    if (currTime - lastReconnAttempt >= RECONN_INTERVAL)
-    {
-        lastReconnAttempt = currTime;
-        return Connect();
-    }
-
-    return false;
-}
-
-// consume los mensajes de la cola "Actions" y actua en consecuencia
-bool MqttCommunication::ConsumeActions()
-{
-    // verifica la conexión al broker y al wifi
-
-    // lee los mensajes de "Actions"
-
-
-    // deserializa los datos para identificar los actuadores y el comando
-
-    // organiza los comandos y establece el actuador indicado
-
-    // ejecuta el comando
-
-    return true;
 }
 
 void MqttCommunication::TestBrokerConnection()
