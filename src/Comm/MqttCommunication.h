@@ -6,6 +6,9 @@
 #include <PubSubClient.h>
 #include "../Secrets.h"
 #include "../Objects/FullTelemetry.h"
+#include "Utils/JsonConverter.h"
+#include "ActionDispatcher/ActionDispatcher.h"
+#include "Objects/ActionResult.h"
 
 class MqttCommunication
 {
@@ -16,9 +19,11 @@ class MqttCommunication
         bool Connect();
         bool IsConnected();
         bool PublishTelemetry(FullTelemetry& fullTelemetry);
+        bool PublishActionResponse(const ActionResult& result);
         bool Loop(); 
         void CheckNetworks();
         void TestBrokerConnection();
+        bool TryTakeAction(ActionMessage& result);
 
     private:
         WiFiClient wifiClient;
@@ -31,6 +36,7 @@ class MqttCommunication
         const char* brokerPass;
 
         void HandleMessage(char* topic, byte* payload, int length);
+        std::optional<ActionMessage> pendingAction;
 };
 
 #endif

@@ -7,48 +7,13 @@
 namespace
 {
     EnumsSwitch enumSwitch = EnumsSwitch();
+    JsonConverter jsonConverter = JsonConverter();
 }
 
 // constructor
 MqttCommunication::MqttCommunication(const char *brokerHost, uint16_t brokerPort, const char *clientId,
                                      const char *brokerUser, const char *brokerPass) : wifiClient(), mqttClient(wifiClient), brokerHost(brokerHost), brokerPort(brokerPort), clientId(clientId),
                                                                                        brokerUser(brokerUser), brokerPass(brokerPass) {};
-
-// crea el json para luego parcearlo
-JsonDocument LoadDataIntoJson(FullTelemetry &fullTelemetry)
-{
-    JsonDocument doc;
-
-    JsonArray sensors = doc["sensorReadings"].to<JsonArray>();
-    JsonArray actuators = doc["actuatorReadings"].to<JsonArray>();
-
-    for (const SensorReading &reading : fullTelemetry.sensorReadings)
-    {
-        JsonObject sensor = sensors.add<JsonObject>();
-
-        sensor["id"] = reading.sensorId;
-        sensor["name"] = reading.sensorName;
-        sensor["measurementType"] = enumSwitch.MeasurementTypesName(reading.measurementInfo.type);
-        sensor["measurementUnit"] = enumSwitch.MeasurementUnitsName(reading.measurementInfo.unit);
-        sensor["esp32Pin"] = reading.sensorPin;
-        sensor["connType"] = enumSwitch.ConnectionTypeName(reading.connType);
-        sensor["value"] = reading.value;
-    }
-
-    for (const ActuatorData &data : fullTelemetry.actuatorsData)
-    {
-        JsonObject actuator = actuators.add<JsonObject>();
-
-        actuator["id"] = data.actuatorId;
-        actuator["name"] = data.actuatorName;
-        actuator["esp32Pin"] = data.actuatorPin;
-        actuator["connType"] = enumSwitch.ConnectionTypeName(data.connType);
-        actuator["mode"] = enumSwitch.PumpControlModeName(data.mode);
-        actuator["state"] = data.value;
-    }
-
-    return doc;
-}
 
 // validación al momento de cualquier evento de wifi
 void OnWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
@@ -99,13 +64,38 @@ void MqttCommunication::Init()
 
 void MqttCommunication::HandleMessage(char *topic, byte *payload, int length)
 {
+    ActionMessage actionMessage;
+
     Serial.printf("\nMensaje recibido en: %s\n", topic);
 
-    Serial.print("\nContenido: \n");
+    bool success = JsonConverter::Deserialize(payload, length, actionMessage);
 
-    Serial.write(payload, length);
+    if (!success)
+    {
+        Serial.println("Error deserializando ActionMessage");
+        return;
+    }
 
-    Serial.println();
+    Serial.println("ActionMessage deserializado correctamente");
+
+    if (pendingAction.has_value())
+    {
+        Serial.println("Comando rechazado: hay una accion pendiente");
+        return;
+    }
+
+    pendingAction = std::move(actionMessage);
+}
+
+bool MqttCommunication::TryTakeAction(ActionMessage& result)
+{
+    if (!pendingAction.has_value())
+        return false;
+
+    result = std::move(*pendingAction);
+    pendingAction.reset();
+
+    return true;
 }
 
 bool MqttCommunication::Connect()
@@ -182,13 +172,32 @@ bool MqttCommunication::PublishTelemetry(FullTelemetry &fullTelemetry)
         return false;
     }
 
-    JsonDocument doc = LoadDataIntoJson(fullTelemetry);
+    JsonDocument doc = jsonConverter.LoadDataIntoJson(fullTelemetry);
     serializeJson(doc, payload);
 
     bool published = mqttClient.publish(enumSwitch.TopicsName(Topics::Telemetry).c_str(), payload.c_str());
 
     Serial.print("\nMensaje enviado, publicado:\n");
     Serial.print(published);
+
+    return published;
+}
+
+bool MqttCommunication::PublishActionResponse(const ActionResult& result)
+{
+    if (!mqttClient.connected())
+        return false;
+
+    JsonDocument doc = jsonConverter.ToJson(result);
+
+    std::string payload;
+    serializeJson(doc, payload);
+
+    std::string topic = enumSwitch.TopicsName(Topics::ActionsResponse);
+
+    bool published = mqttClient.publish(topic.c_str(), payload.c_str());
+
+    Serial.printf("Respuesta publicada: %s | Bytes: %u\n", published ? "SI" : "NO",  static_cast<unsigned>(payload.size()));
 
     return published;
 }

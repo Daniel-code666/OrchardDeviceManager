@@ -4,7 +4,8 @@
 enum class Topics
 {
     Telemetry,
-    Actions
+    Actions,
+    ActionsResponse
 };
 
 #endif

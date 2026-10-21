@@ -52,8 +52,68 @@ std::string EnumsSwitch::TopicsName(Topics topic)
     {
         case Topics::Telemetry: return "Telemetry";
         case Topics::Actions: return "Actions";
+        case Topics::ActionsResponse: return "ActionsResponse";
         default: return "Unknow";
     }
+}
+
+std::string EnumsSwitch::CommandName(Commands command)
+{
+    switch (command)
+    {
+        case Commands::GetSensorOrActuatorDataById: return "GetSensorOrActuatorDataById";
+        case Commands::SetWaterPumpControlMode: return "SetWaterPumpControlMode";
+        case Commands::SetWaterPumpState: return "SetWaterPumpState";
+        default: return "Unknow";
+    }
+}
+
+std::string EnumsSwitch::CommandNameByString(std::string command)
+{
+    if (command == CommandName(Commands::GetSensorOrActuatorDataById))
+        return "GetSensorOrActuatorDataById";
+
+    if (command == CommandName(Commands::SetWaterPumpControlMode))
+        return "SetWaterPumpControlMode";
+
+    if (command == CommandName(Commands::SetWaterPumpState))
+        return "SetWaterPumpState";
+
+    return "Unknown";
+}
+
+std::optional<Commands> EnumsSwitch::CommandFromString(const std::string& command)
+{
+    if (command == CommandName(Commands::GetSensorOrActuatorDataById))
+        return Commands::GetSensorOrActuatorDataById;
+
+    if (command == CommandName(Commands::SetWaterPumpControlMode))
+        return Commands::SetWaterPumpControlMode;
+
+    if (command == CommandName(Commands::SetWaterPumpState))
+        return Commands::SetWaterPumpState;
+
+    return std::nullopt;
+}
+
+std::string EnumsSwitch::DeviceTypeName(DeviceType type)
+{
+    switch (type)
+    {
+        case DeviceType::Sensor: return "sensor";
+        case DeviceType::Actuator: return "actuator";
+        default: return "Unknow";
+    }
+}
+
+std::optional<DeviceType> EnumsSwitch::DeviceTypeFromString(const std::string& type)
+{
+    if (type == DeviceTypeName(DeviceType::Sensor))
+        return DeviceType::Sensor;
+    if (type == DeviceTypeName(DeviceType::Actuator))
+        return DeviceType::Actuator;
+    
+    return std::nullopt;
 }
 
 DeviceIdByType EnumsSwitch::OrganizeIdsByType(ActionMessage& actionMessage)
