@@ -2,15 +2,13 @@
 #include "../Sensors/Sensors.h"
 #include "../Constants/Constants.h"
 #include "../Comm/MqttCommunication.h"
-#if ENABLE_DEVELOPMENT_BOOTSTRAP
-#include "../Secrets.h"
-#endif
 #include "../Configuration/ConfigurationManager.h"
 #include "../Provisioning/ProvisioningManager.h"
 #include "../DeviceProvisioning/DeviceProvisioningManager.h"
 #include "../CredentialProvisioning/MqttCredentialProvisioningManager.h"
 #include "../Recovery/DeviceRecoveryManager.h"
 #include "../Ota/FirmwareUpdateManager.h"
+#include "../Identity/DeviceIdentity.h"
 #include "../Constants/FirmwareVersion.h"
 #if ENABLE_LOCAL_PROVISIONING_MOCK
 #include "../DeviceProvisioning/SerialProvisioningMock.h"
@@ -52,9 +50,39 @@ namespace
     unsigned long credentialUpdateStartedAt = 0;
     unsigned long credentialConnectionStableStartedAt = 0;
     unsigned long lastRead = 0;
+    DeviceIdentity hardwareIdentity;
+    bool startupReady = false;
 
     constexpr unsigned long CREDENTIAL_CONNECTION_TIMEOUT_MS = 20000;
     constexpr unsigned long CREDENTIAL_STABILITY_WINDOW_MS = 5000;
+    constexpr size_t SERIAL_RX_BUFFER_SIZE = 8192;
+
+    DeviceConfiguration BuildFactoryConfiguration(const DeviceIdentity &identity)
+    {
+        DeviceConfiguration configuration;
+        configuration.deviceId = identity.deviceId;
+        configuration.mqttClientId = identity.mqttClientId;
+        return configuration;
+    }
+
+    bool HasApprovedMqttCredentials()
+    {
+        return credentialProvisioningInitialized &&
+               mqttCredentialManager.GetAppliedCredentialVersion() > 0 &&
+               activeConfiguration.HasMqttConfiguration() &&
+               !deviceRecoveryManager.IsMqttRevoked();
+    }
+
+    void TryStartMqtt()
+    {
+        if (mqttInitialized || credentialUpdateInProgress ||
+            !deviceProvisioningManager.IsProvisioned() || !HasApprovedMqttCredentials())
+            return;
+
+        mqttInitialized = comm.Init(activeConfiguration);
+        if (!mqttInitialized)
+            Serial.println("MQTT deshabilitado: configuracion o credenciales no disponibles");
+    }
 
     void BeginCredentialProvisioning()
     {
@@ -87,7 +115,7 @@ namespace
         credentialCandidate = DeviceConfiguration{};
         credentialCandidateVersion = 0;
         credentialConnectionStableStartedAt = 0;
-        mqttInitialized = comm.Init(activeConfiguration);
+        TryStartMqtt();
     }
 
     void ApplyProvisioningState(DeviceProvisioningState state)
@@ -106,43 +134,72 @@ namespace
             credentialProvisioningInitialized = false;
             credentialUpdateInProgress = false;
             mqttCredentialManager.Reset();
-            if (!deviceProvisioningManager.StartClaim(millis()))
-                Serial.println("No fue posible iniciar una nueva solicitud de vinculacion");
             return;
         }
 
-        if (state == DeviceProvisioningState::Provisioned &&
-            !deviceRecoveryManager.IsMqttRevoked() &&
-            !mqttInitialized && activeConfiguration.IsValid())
+        if (state == DeviceProvisioningState::Provisioned)
         {
-            mqttInitialized = comm.Init(activeConfiguration);
-            if (!mqttInitialized)
-                Serial.println("MQTT deshabilitado: configuracion incompleta");
+            BeginCredentialProvisioning();
+            TryStartMqtt();
+        }
+    }
+
+    void TryStartClaimWhenOnline(unsigned long now)
+    {
+        if (deviceProvisioningManager.GetState() != DeviceProvisioningState::Unprovisioned ||
+            provisioningManager.GetState() != ProvisioningState::Connected)
+            return;
+
+        if (!deviceProvisioningManager.StartClaim(now))
+            Serial.println("No fue posible iniciar la solicitud de vinculacion");
+    }
+
+    bool ReconcileHardwareIdentity(DeviceConfiguration &configuration)
+    {
+        if (configuration.deviceId == hardwareIdentity.deviceId &&
+            configuration.mqttClientId == hardwareIdentity.mqttClientId)
+            return true;
+
+        ProvisioningRecord provisioningRecord;
+        const ProvisioningLoadResult provisioningResult =
+            configurationManager.LoadProvisioning(provisioningRecord);
+        if (provisioningResult == ProvisioningLoadResult::Loaded &&
+            provisioningRecord.state == DeviceProvisioningState::Provisioned)
+        {
+            Serial.printf("Identidad vinculada conservada: %s | Hardware: %s\n",
+                          configuration.deviceId.c_str(), hardwareIdentity.hardwareId.c_str());
+            return true;
         }
 
-        if (state == DeviceProvisioningState::Provisioned)
-            BeginCredentialProvisioning();
-    }
+        if (!configurationManager.ClearCredentialSecurity() ||
+            !configurationManager.ClearRecovery() ||
+            !configurationManager.ClearProvisioning())
+            return false;
 
-#if ENABLE_DEVELOPMENT_BOOTSTRAP
-    DeviceConfiguration BuildDevelopmentConfiguration()
-    {
-        DeviceConfiguration configuration;
-        configuration.deviceId = DEVICE_ID;
-        configuration.wifiSsid = WIFI_SSID;
-        configuration.wifiPassword = WIFI_PASSWORD;
-        configuration.mqttHost = MQTT_HOST;
-        configuration.mqttPort = MQTT_PORT;
-        configuration.mqttClientId = MQTT_CLIENT_ID;
-        configuration.mqttUser = MQTT_USER;
-        configuration.mqttPassword = MQTT_PASSWORD;
-        return configuration;
+        DeviceConfiguration migrated = configuration;
+        migrated.deviceId = hardwareIdentity.deviceId;
+        migrated.mqttClientId = hardwareIdentity.mqttClientId;
+        if (!configurationManager.Save(migrated))
+            return false;
+
+        configuration = std::move(migrated);
+        Serial.printf("Identidad de hardware aplicada: %s | MQTT ClientId: %s\n",
+                      configuration.deviceId.c_str(), configuration.mqttClientId.c_str());
+        return true;
     }
-#endif
 }
 void setup()
 {
+    // Los contratos locales cifrados pueden superar ampliamente los 256 bytes
+    // del buffer USB CDC predeterminado. Configurarlo antes de begin() evita que
+    // una pegada en bloque pierda el final del JSON y su terminador de linea.
+    Serial.setRxBufferSize(SERIAL_RX_BUFFER_SIZE);
     Serial.begin(115200);
+    if (!DeviceIdentity::TryCreate(hardwareIdentity))
+    {
+        Serial.println("No fue posible obtener la identidad unica desde eFuse");
+        return;
+    }
     if (!firmwareUpdateManager.Begin(FIRMWARE_VERSION))
         Serial.println("Gestor OTA no disponible");
     else
@@ -160,26 +217,36 @@ void setup()
                       activeConfiguration.version, activeConfiguration.deviceId.c_str());
         if (recoveredFromBackup)
             Serial.println("Configuracion principal recuperada desde la ultima copia valida");
+        if (!ReconcileHardwareIdentity(activeConfiguration))
+        {
+            configurationAvailable = false;
+            Serial.println("No fue posible reconciliar la identidad de hardware");
+        }
     }
     else
     {
-#if ENABLE_DEVELOPMENT_BOOTSTRAP
-        activeConfiguration = BuildDevelopmentConfiguration();
-        Serial.println("Configuracion NVS ausente o invalida. Iniciando migracion de desarrollo...");
+        activeConfiguration = BuildFactoryConfiguration(hardwareIdentity);
+        Serial.println("Configuracion NVS ausente o invalida. Creando estado de fabrica...");
 
         if (!configurationManager.Save(activeConfiguration))
         {
-            Serial.println("Error guardando o verificando la configuracion en NVS");
+            Serial.println("Error guardando o verificando el estado de fabrica en NVS");
         }
         else
         {
             configurationAvailable = true;
-            Serial.println("Configuracion migrada y verificada mediante lectura desde NVS");
+            Serial.printf("Estado de fabrica listo | DeviceId: %s | MQTT ClientId: %s\n",
+                          activeConfiguration.deviceId.c_str(),
+                          activeConfiguration.mqttClientId.c_str());
         }
-#else
-        Serial.println("Configuracion NVS ausente o invalida. Comunicacion deshabilitada");
-#endif
     }
+
+#if ENABLE_LOCAL_PROVISIONING_MOCK
+    if (configurationAvailable)
+        serialProvisioningMock.SetDeviceInfo(activeConfiguration.deviceId,
+                                             activeConfiguration.mqttClientId,
+                                             FIRMWARE_VERSION);
+#endif
 
     sensors.InitializeSensors();
 
@@ -195,10 +262,6 @@ void setup()
         if (!recoveryInitialized)
             Serial.println("Recuperacion deshabilitada: no fue posible validar su estado persistente");
 
-        if (deviceProvisioningManager.GetState() == DeviceProvisioningState::Unprovisioned &&
-            !deviceProvisioningManager.StartClaim(millis()))
-            Serial.println("No fue posible iniciar la solicitud de vinculacion");
-
         DeviceProvisioningState state;
         while (deviceProvisioningManager.TryTakeStateChange(state))
             ApplyProvisioningState(state);
@@ -212,10 +275,17 @@ void setup()
     Serial.print("LECTURAS OBTENIDAS \n");
     lastRead = millis();
     localSystemHealthy = configurationAvailable && deviceProvisioningAvailable;
+    startupReady = true;
 }
 
 void loop()
 {
+    if (!startupReady)
+    {
+        delay(1000);
+        return;
+    }
+
     provisioningManager.Loop();
 
     const unsigned long currentTime = millis();
@@ -269,8 +339,16 @@ void loop()
         activeConfiguration = updatedConfiguration;
         mqttCredentialManager.UpdateBaseConfiguration(activeConfiguration);
         if (deviceProvisioningManager.IsProvisioned())
-            mqttInitialized = comm.Init(activeConfiguration);
+        {
+            BeginCredentialProvisioning();
+            TryStartMqtt();
+        }
     }
+
+    TryStartClaimWhenOnline(currentTime);
+
+    while (deviceProvisioningManager.TryTakeStateChange(state))
+        ApplyProvisioningState(state);
 
     if (mqttInitialized)
         comm.Loop();

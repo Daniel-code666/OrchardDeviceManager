@@ -20,6 +20,7 @@ struct DeviceConfiguration
     bool IsValid() const;
     bool IsPersistable() const;
     bool HasWifiConfiguration() const;
+    bool HasMqttConfiguration() const;
 
     bool operator==(const DeviceConfiguration &other) const;
 };

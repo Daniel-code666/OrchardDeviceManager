@@ -1,0 +1,8 @@
+{
+    "type": "claim_request",
+    "contractVersion": 1,
+    "deviceId": "huerta-c3-a0f262a61a68",
+    "requestId": "3b1e7355eabf5a4f0e57bc1d781a2547",
+    "claimCode": "5KZL3LU5DPWC",
+    "expiresInSeconds": 300
+}

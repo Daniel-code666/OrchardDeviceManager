@@ -72,6 +72,7 @@ public:
 
     RecoveryLoadResult LoadRecovery(RecoveryRecord &record) const;
     bool SaveRecovery(const RecoveryRecord &record) const;
+    bool ClearRecovery() const;
 
     OtaLoadResult LoadOta(OtaRecord &record) const;
     bool SaveOta(const OtaRecord &record) const;

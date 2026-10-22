@@ -1,30 +1,40 @@
-# Pruebas de aceptación — Fase 1
+# Pruebas de aceptación — arranque de fábrica y persistencia
 
 Estas pruebas se ejecutan con un ESP32-C3 conectado. No imprimen SSID, claves Wi-Fi ni credenciales MQTT.
 
-## 1. Escritura y lectura inmediata
+## 1. Restablecimiento completo
 
-1. Mantener temporalmente `ENABLE_DEVELOPMENT_BOOTSTRAP=1` en `platformio.ini`.
-2. Cargar el firmware: `platformio run --target upload`.
-3. Abrir el monitor: `platformio device monitor --baud 115200`.
-4. En un dispositivo sin el namespace `huerta_cfg`, comprobar este mensaje:
-   `Configuracion migrada y verificada mediante lectura desde NVS`.
+1. Cerrar cualquier monitor serial que esté usando el puerto.
+2. Listar los equipos: `.\tools\huerta-device.ps1 list`.
+3. Ejecutar `.\tools\huerta-device.ps1 factory-reset -Serial <SERIAL_USB>`.
+4. Abrir el monitor con `.\tools\huerta-device.ps1 monitor -Serial <SERIAL_USB>`.
+5. Comprobar `Configuracion NVS ausente o invalida. Creando estado de fabrica` y
+   `Estado de fabrica listo`.
+6. Comprobar que aparece inmediatamente la red `Huerta-<SUFIJO>` y que aún no se
+   genera una solicitud de vinculación ni se intenta conectar a MQTT.
 
 `ConfigurationManager::Save()` solo devuelve éxito después de cerrar NVS, abrirla de nuevo y comparar todos los campos leídos con los escritos.
 
-## 2. Persistencia después de reiniciar
+## 2. Wi-Fi antes de la vinculación
 
-1. Reiniciar el ESP32-C3 sin volver a cargar el firmware.
-2. Comprobar que aparece `Configuracion cargada desde NVS` y no aparece `Iniciando migracion de desarrollo`.
-3. Comprobar que la versión indicada es `1` y que el `DeviceId` permanece igual.
+1. Entrar a `http://192.168.4.1`, autenticarse y enviar credenciales Wi-Fi válidas.
+2. Comprobar `Credenciales Wi-Fi verificadas y guardadas en NVS` y `Conectado | IP:`.
+3. Solo después de esos mensajes debe aparecer `PROVISIONING_REQUEST`.
+4. Reiniciar el ESP32-C3 y comprobar `Configuracion cargada desde NVS`, la misma
+   identidad y la reconexión con las credenciales guardadas.
 
-## 3. Firmware sin credenciales de desarrollo
+## 3. Credenciales MQTT después de vincular
 
-1. Después de completar las dos pruebas anteriores, eliminar de `platformio.ini` la bandera `ENABLE_DEVELOPMENT_BOOTSTRAP=1`.
-2. Compilar y cargar de nuevo el firmware.
-3. Reiniciar y comprobar que la configuración continúa cargándose desde NVS.
+1. Aprobar la solicitud local de vinculación.
+2. Comprobar que se genera `MQTT_CREDENTIALS_REQUEST` con versión aplicada `0`.
+3. Comprobar que el firmware aún no intenta conectarse al broker.
+4. Entregar un sobre válido con credenciales individuales y el `mqttClientId`
+   indicado por `DEVICE_INFO`.
+5. Comprobar que las credenciales se prueban, se guardan y únicamente entonces
+   aparece `Conectado al broker`.
 
-Así se verifica que Wi-Fi y MQTT ya no dependen de `Secrets.h` durante la operación normal.
+Así se verifica que Wi-Fi y MQTT ya no dependen de `Secrets.h` ni de datos
+precargados durante el primer arranque.
 
 ## 4. Reconexión Wi-Fi y MQTT
 

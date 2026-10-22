@@ -58,6 +58,15 @@ namespace
 
     bool WriteString(Preferences &preferences, const char *key, const std::string &value)
     {
+        // Preferences::putString() devuelve strlen(value). Para una cadena vacia
+        // devuelve 0 incluso si nvs_set_str() tuvo exito, por lo que no puede
+        // usarse ese retorno como indicador de error en el estado de fabrica.
+        if (value.empty())
+        {
+            preferences.remove(key);
+            return !preferences.isKey(key);
+        }
+
         return preferences.putString(key, value.c_str()) > 0;
     }
 }
@@ -544,6 +553,25 @@ bool ConfigurationManager::SaveRecovery(const RecoveryRecord &record) const
            persisted.lastRequestId == record.lastRequestId &&
            persisted.mqttRevoked == record.mqttRevoked &&
            persisted.unlinkPending == record.unlinkPending;
+}
+
+bool ConfigurationManager::ClearRecovery() const
+{
+    Preferences preferences;
+    if (!preferences.begin(NAMESPACE, false))
+        return false;
+
+    bool success = true;
+    const char *keys[] = {
+        KEY_RECOVERY_COMMITTED, KEY_RECOVERY_VERSION, KEY_RECOVERY_COMMAND_VERSION,
+        KEY_RECOVERY_REQUEST, KEY_RECOVERY_REVOKED, KEY_RECOVERY_UNLINK};
+    for (const char *key : keys)
+    {
+        if (preferences.isKey(key))
+            success = preferences.remove(key) && success;
+    }
+    preferences.end();
+    return success;
 }
 
 OtaLoadResult ConfigurationManager::LoadOta(OtaRecord &record) const

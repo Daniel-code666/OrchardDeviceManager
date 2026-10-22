@@ -22,6 +22,9 @@ public:
     void AnnouncePendingRequest() const;
     void AnnouncePendingCredentialRequest() const;
     void Loop(unsigned long now);
+    void SetDeviceInfo(const std::string &deviceId,
+                       const std::string &mqttClientId,
+                       const std::string &firmwareVersion);
 
 private:
     static constexpr size_t MAX_RESPONSE_LENGTH = 6144;
@@ -33,6 +36,9 @@ private:
     FirmwareUpdateManager &firmwareUpdateManager;
     Sensors &sensors;
     std::string inputBuffer;
+    std::string deviceId;
+    std::string mqttClientId;
+    std::string firmwareVersion;
 
     void ProcessLine(unsigned long now);
 };

@@ -6,6 +6,7 @@
 #include "../Ota/OtaControlJson.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 namespace
 {
@@ -79,17 +80,27 @@ void SerialProvisioningMock::AnnouncePendingRequest() const
     Serial.println("PROVISIONING_REQUEST_END");
 }
 
+void SerialProvisioningMock::SetDeviceInfo(const std::string &newDeviceId,
+                                           const std::string &newMqttClientId,
+                                           const std::string &newFirmwareVersion)
+{
+    deviceId = newDeviceId;
+    mqttClientId = newMqttClientId;
+    firmwareVersion = newFirmwareVersion;
+}
+
 void SerialProvisioningMock::Loop(unsigned long now)
 {
     while (Serial.available() > 0)
     {
         const char character = static_cast<char>(Serial.read());
-        if (character == '\r')
-            continue;
-
-        if (character == '\n')
+        // Algunos monitores envian CR, otros LF y PlatformIO puede enviar CRLF.
+        // Procesar cualquiera de los dos permite usar todos sin dejar el comando
+        // retenido indefinidamente; el segundo byte de CRLF encuentra el buffer vacio.
+        if (character == '\r' || character == '\n')
         {
-            ProcessLine(now);
+            if (!inputBuffer.empty())
+                ProcessLine(now);
             inputBuffer.clear();
             continue;
         }
@@ -113,6 +124,20 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
     if (inputBuffer == "PROVISIONING_REQUEST")
     {
         AnnouncePendingRequest();
+        return;
+    }
+
+    if (inputBuffer == "DEVICE_INFO")
+    {
+        JsonDocument document;
+        document["type"] = "device_info";
+        document["deviceId"] = deviceId;
+        document["mqttClientId"] = mqttClientId;
+        document["firmwareVersion"] = firmwareVersion;
+        Serial.println("DEVICE_INFO_BEGIN");
+        serializeJson(document, Serial);
+        Serial.println();
+        Serial.println("DEVICE_INFO_END");
         return;
     }
 

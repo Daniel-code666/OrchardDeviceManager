@@ -11,25 +11,37 @@ namespace
 
 bool DeviceConfiguration::IsValid() const
 {
-    return IsPersistable() && HasWifiConfiguration();
+    return IsPersistable() && HasWifiConfiguration() && HasMqttConfiguration();
 }
 
 bool DeviceConfiguration::IsPersistable() const
 {
+    const bool wifiFieldsAreConsistent = !wifiSsid.empty() || wifiPassword.empty();
+    const bool mqttFieldsAreEmpty = mqttHost.empty() && mqttPort == 0 &&
+                                    mqttUser.empty() && mqttPassword.empty();
+    const bool mqttFieldsAreComplete = HasMqttConfiguration();
+
     return version == CURRENT_VERSION &&
            DeviceTopics::IsValidDeviceId(deviceId) &&
            wifiSsid.size() <= 32 &&
            wifiPassword.size() <= 64 &&
-           HasValidLength(mqttHost, 253) &&
-           mqttPort != 0 &&
            HasValidLength(mqttClientId, 128) &&
-           mqttUser.size() <= 256 &&
-           mqttPassword.size() <= 512;
+           wifiFieldsAreConsistent &&
+           (mqttFieldsAreEmpty || mqttFieldsAreComplete);
 }
 
 bool DeviceConfiguration::HasWifiConfiguration() const
 {
     return HasValidLength(wifiSsid, 32) && wifiPassword.size() <= 64;
+}
+
+bool DeviceConfiguration::HasMqttConfiguration() const
+{
+    return HasValidLength(mqttHost, 253) &&
+           mqttPort != 0 &&
+           HasValidLength(mqttClientId, 128) &&
+           HasValidLength(mqttUser, 256) &&
+           HasValidLength(mqttPassword, 512);
 }
 
 bool DeviceConfiguration::operator==(const DeviceConfiguration &other) const

@@ -36,7 +36,8 @@ bool MqttCredentialProvisioningManager::Begin(const std::string &stableDeviceId,
                                                bool deviceIsProvisioned)
 {
     if (!deviceIsProvisioned || !IsValidProvisioningIdentifier(stableDeviceId) ||
-        active.deviceId != stableDeviceId || !active.IsValid())
+        active.deviceId != stableDeviceId || !active.IsPersistable() ||
+        !active.HasWifiConfiguration())
         return false;
 
     deviceId = stableDeviceId;
@@ -80,7 +81,8 @@ bool MqttCredentialProvisioningManager::StartRequest()
 void MqttCredentialProvisioningManager::UpdateBaseConfiguration(
     const DeviceConfiguration &active)
 {
-    if (initialized && active.IsValid() && active.deviceId == deviceId)
+    if (initialized && active.IsPersistable() && active.HasWifiConfiguration() &&
+        active.deviceId == deviceId)
         baseConfiguration = active;
 }
 
@@ -292,10 +294,12 @@ bool MqttCredentialProvisioningManager::ParseCredentials(const std::string &plai
         version == 0 || port == 0 || port > 65535)
         return false;
 
+    if (baseConfiguration.mqttClientId != clientId)
+        return false;
+
     DeviceConfiguration parsed = baseConfiguration;
     parsed.mqttHost = host;
     parsed.mqttPort = static_cast<uint16_t>(port);
-    parsed.mqttClientId = clientId;
     parsed.mqttUser = user;
     parsed.mqttPassword = password;
     if (!HasRequiredCredentialLengths(parsed) || !parsed.IsValid())

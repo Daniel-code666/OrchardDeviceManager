@@ -391,18 +391,22 @@ bool ProvisioningManager::EnsureAccessPointPassword()
 
 std::string ProvisioningManager::BuildAccessPointName(const std::string &deviceId)
 {
+    constexpr size_t DISPLAY_SUFFIX_LENGTH = 6;
     std::string suffix;
-    suffix.reserve(16);
+    suffix.reserve(DISPLAY_SUFFIX_LENGTH);
 
-    for (char value : deviceId)
+    for (auto iterator = deviceId.rbegin();
+         iterator != deviceId.rend() && suffix.size() < DISPLAY_SUFFIX_LENGTH; ++iterator)
     {
-        const bool valid = (value >= 'a' && value <= 'z') ||
-                           (value >= 'A' && value <= 'Z') ||
-                           (value >= '0' && value <= '9') || value == '-';
-        if (valid)
-            suffix.push_back(value);
-        if (suffix.size() == 16)
-            break;
+        char value = *iterator;
+        const bool isDigit = value >= '0' && value <= '9';
+        const bool isLower = value >= 'a' && value <= 'z';
+        const bool isUpper = value >= 'A' && value <= 'Z';
+        if (!isDigit && !isLower && !isUpper)
+            continue;
+        if (isLower)
+            value = static_cast<char>(value - 'a' + 'A');
+        suffix.insert(suffix.begin(), value);
     }
 
     return "Huerta-" + (suffix.empty() ? std::string("Device") : suffix);
