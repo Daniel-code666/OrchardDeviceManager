@@ -85,3 +85,25 @@ en validación y registra `Firmware OTA confirmado`.
 node --test test/phase7_ota_mock.test.mjs
 ```
 
+## Validación física realizada
+
+El 22 de octubre de 2026 se validó con el ESP32-C3 conectado en `COM5`:
+
+- descarga firmada desde `http://192.168.0.13:8080`;
+- actualización real de `1.2.0` a `1.3.0`;
+- escritura y arranque desde la segunda partición;
+- estado inicial del bootloader `ESP_OTA_IMG_PENDING_VERIFY`;
+- restauración del mismo `DeviceId`, Wi-Fi, vinculación y versión 2 de las
+  credenciales MQTT;
+- inicialización de sensores y bomba apagada;
+- reconexión y suscripción correcta a RabbitMQ;
+- confirmación explícita después de la ventana de estabilidad;
+- rechazo posterior del mismo manifiesto con `version_rejected`.
+
+La prueba también permitió corregir dos detalles específicos del hardware:
+
+- el orden de vida entre `WiFiClient` y `HTTPClient` durante la lectura del
+  manifiesto;
+- la confirmación automática temprana de Arduino-ESP32, aplazada mediante
+  `verifyRollbackLater()` para que la realice `FirmwareUpdateManager`.
+

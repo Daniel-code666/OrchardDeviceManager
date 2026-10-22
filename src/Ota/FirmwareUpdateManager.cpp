@@ -49,9 +49,12 @@ bool FirmwareUpdateManager::Begin(const std::string &runningVersion)
 
     const esp_partition_t *runningPartition = esp_ota_get_running_partition();
     esp_ota_img_states_t imageState = ESP_OTA_IMG_UNDEFINED;
-    const bool pendingBootValidation = runningPartition != nullptr &&
-                                       esp_ota_get_state_partition(runningPartition, &imageState) == ESP_OK &&
-                                       imageState == ESP_OTA_IMG_PENDING_VERIFY;
+    const bool imageStateAvailable = runningPartition != nullptr &&
+                                     esp_ota_get_state_partition(runningPartition, &imageState) == ESP_OK;
+    const bool pendingBootValidation = imageStateAvailable &&
+                                       (imageState == ESP_OTA_IMG_NEW ||
+                                        imageState == ESP_OTA_IMG_PENDING_VERIFY);
+    Serial.printf("Estado de imagen OTA del bootloader: %d\n", static_cast<int>(imageState));
 
     if (pendingBootValidation)
     {
@@ -171,8 +174,9 @@ uint8_t FirmwareUpdateManager::GetProgressPercent() const
 bool FirmwareUpdateManager::LoadManifest(const std::string &url, FirmwareManifest &manifest,
                                          OtaStartResult &failure)
 {
-    HTTPClient manifestClient;
     WiFiClient manifestNetworkClient;
+    // HTTPClient conserva una referencia al transporte; debe destruirse primero.
+    HTTPClient manifestClient;
     manifestClient.setConnectTimeout(5000);
     manifestClient.setTimeout(5000);
     if (!manifestClient.begin(manifestNetworkClient, url.c_str()))

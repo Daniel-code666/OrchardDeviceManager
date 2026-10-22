@@ -18,6 +18,13 @@
 #include "Objects/FullTelemetry.h"
 #include "ActionDispatcher/ActionDispatcher.h"
 
+// Arduino-ESP32 confirma OTA antes de setup() por defecto. Se aplaza para que
+// FirmwareUpdateManager valide NVS, sensores y estabilidad del arranque.
+extern "C" bool verifyRollbackLater()
+{
+    return true;
+}
+
 namespace
 {
     Sensors sensors = Sensors();
