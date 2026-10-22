@@ -37,7 +37,7 @@ namespace
     FirmwareUpdateManager firmwareUpdateManager(configurationManager);
 #if ENABLE_LOCAL_PROVISIONING_MOCK
     SerialProvisioningMock serialProvisioningMock(
-        deviceProvisioningManager, mqttCredentialManager, deviceRecoveryManager,
+        provisioningManager, deviceProvisioningManager, mqttCredentialManager, deviceRecoveryManager,
         firmwareUpdateManager, sensors);
 #endif
     MqttCommunication comm;

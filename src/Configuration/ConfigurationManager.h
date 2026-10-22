@@ -59,6 +59,8 @@ public:
                     const std::string &clientId, const std::string &user,
                     const std::string &password) const;
     bool ClearWifi() const;
+    bool LoadAccessPointPassword(std::string &password) const;
+    bool SaveAccessPointPassword(const std::string &password) const;
 
     ProvisioningLoadResult LoadProvisioning(ProvisioningRecord &record) const;
     bool SaveProvisioning(const ProvisioningRecord &record) const;

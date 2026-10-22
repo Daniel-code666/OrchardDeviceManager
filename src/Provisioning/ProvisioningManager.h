@@ -2,6 +2,7 @@
 
 #include <DNSServer.h>
 #include <WebServer.h>
+#include <cstdint>
 #include <string>
 
 #include "../Configuration/ConfigurationManager.h"
@@ -12,8 +13,7 @@ enum class ProvisioningState
     Connecting,
     Connected,
     PortalActive,
-    TestingCredentials,
-    WindowExpired
+    TestingCredentials
 };
 
 class ProvisioningManager
@@ -25,11 +25,11 @@ public:
     void Loop();
     bool TryTakeUpdatedConfiguration(DeviceConfiguration &configuration);
     ProvisioningState GetState() const;
+    bool StartWifiOutageTest(unsigned long now, uint32_t durationSeconds);
 
 private:
     static constexpr unsigned long RECOVERY_DELAY_MS = 30000;
     static constexpr unsigned long CREDENTIAL_TEST_TIMEOUT_MS = 20000;
-    static constexpr unsigned long PORTAL_WINDOW_MS = 300000;
 
     ConfigurationManager &configurationManager;
     WebServer webServer;
@@ -39,9 +39,11 @@ private:
     DeviceConfiguration updatedConfiguration;
     ProvisioningState state;
     unsigned long stateStartedAt;
-    unsigned long portalStartedAt;
     bool updatePending;
     bool routesConfigured;
+    bool wifiOutageTestActive;
+    unsigned long wifiOutageTestStartedAt;
+    unsigned long wifiOutageTestDurationMs;
     std::string accessPassword;
     std::string portalStatus;
 
@@ -53,10 +55,12 @@ private:
     void HandleRoot();
     void HandleConfigure();
     void HandleStatus();
+    void HandleCaptivePortalProbe();
     void HandleNotFound();
     void CompleteCredentialTest();
     void FailCredentialTest(const char *message);
 
     static std::string BuildAccessPassword();
     static std::string BuildAccessPointName(const std::string &deviceId);
+    bool EnsureAccessPointPassword();
 };

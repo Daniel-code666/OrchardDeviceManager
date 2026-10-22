@@ -8,6 +8,9 @@ namespace
 {
     constexpr uint16_t DNS_PORT = 53;
     constexpr const char *PORTAL_USER = "admin";
+    const IPAddress ACCESS_POINT_IP(192, 168, 4, 1);
+    const IPAddress ACCESS_POINT_GATEWAY(192, 168, 4, 1);
+    const IPAddress ACCESS_POINT_SUBNET(255, 255, 255, 0);
 
     const char PORTAL_PAGE[] = R"HTML(
 <!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -44,7 +47,8 @@ namespace
 
 ProvisioningManager::ProvisioningManager(ConfigurationManager &manager)
     : configurationManager(manager), webServer(80), state(ProvisioningState::Stopped),
-      stateStartedAt(0), portalStartedAt(0), updatePending(false), routesConfigured(false)
+      stateStartedAt(0), updatePending(false), routesConfigured(false),
+      wifiOutageTestActive(false), wifiOutageTestStartedAt(0), wifiOutageTestDurationMs(0)
 {
 }
 
@@ -71,36 +75,40 @@ bool ProvisioningManager::Begin(const DeviceConfiguration &configuration)
 
 void ProvisioningManager::Loop()
 {
+    if (wifiOutageTestActive &&
+        HasElapsed(wifiOutageTestStartedAt, wifiOutageTestDurationMs))
+    {
+        wifiOutageTestActive = false;
+        wifiOutageTestStartedAt = 0;
+        wifiOutageTestDurationMs = 0;
+
+        if (state == ProvisioningState::PortalActive ||
+            state == ProvisioningState::TestingCredentials)
+            StopPortal();
+
+        WiFi.setAutoReconnect(true);
+        state = ProvisioningState::Stopped;
+        StartStation(activeConfiguration.wifiSsid, activeConfiguration.wifiPassword);
+        state = ProvisioningState::Connecting;
+        stateStartedAt = millis();
+        Serial.println("WIFI_OUTAGE finalizado; restaurando la conexion Wi-Fi desde NVS");
+    }
+
+    // La prueba representa una caida real de la red sin alterar las credenciales.
+    // Si el driver intenta recuperar la estacion antes de tiempo, se desconecta otra vez.
+    if (wifiOutageTestActive && WiFi.status() == WL_CONNECTED)
+        WiFi.disconnect(false, false);
+
     if (state == ProvisioningState::PortalActive || state == ProvisioningState::TestingCredentials)
     {
         dnsServer.processNextRequest();
         webServer.handleClient();
 
-        if (HasElapsed(portalStartedAt, PORTAL_WINDOW_MS))
-        {
-            Serial.println("Ventana de configuracion finalizada");
-            StopPortal();
-            state = ProvisioningState::WindowExpired;
-
-            if (activeConfiguration.HasWifiConfiguration())
-                StartStation(activeConfiguration.wifiSsid, activeConfiguration.wifiPassword);
-            return;
-        }
-
-        if (state == ProvisioningState::PortalActive &&
-            activeConfiguration.HasWifiConfiguration() &&
-            WiFi.status() == WL_CONNECTED)
-        {
-            Serial.println("Wi-Fi recuperado; cerrando configuracion local");
-            StopPortal();
-            state = ProvisioningState::Connected;
-            return;
-        }
     }
 
     if (state == ProvisioningState::Connecting)
     {
-        if (WiFi.status() == WL_CONNECTED)
+        if (!wifiOutageTestActive && WiFi.status() == WL_CONNECTED)
         {
             state = ProvisioningState::Connected;
         }
@@ -138,24 +146,68 @@ ProvisioningState ProvisioningManager::GetState() const
     return state;
 }
 
+bool ProvisioningManager::StartWifiOutageTest(unsigned long now, uint32_t durationSeconds)
+{
+    constexpr uint32_t MIN_DURATION_SECONDS = 1;
+    constexpr uint32_t MAX_DURATION_SECONDS = 3600;
+
+    if (wifiOutageTestActive || !activeConfiguration.HasWifiConfiguration() ||
+        durationSeconds < MIN_DURATION_SECONDS || durationSeconds > MAX_DURATION_SECONDS)
+        return false;
+
+    wifiOutageTestActive = true;
+    wifiOutageTestStartedAt = now;
+    wifiOutageTestDurationMs = static_cast<unsigned long>(durationSeconds) * 1000UL;
+
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    state = ProvisioningState::Connecting;
+    stateStartedAt = now;
+
+    Serial.printf("WIFI_OUTAGE activo durante %lu segundos; NVS no sera modificada\n",
+                  static_cast<unsigned long>(durationSeconds));
+    if (durationSeconds <= RECOVERY_DELAY_MS / 1000UL)
+        Serial.println("Aviso: usa mas de 30 segundos para alcanzar a abrir el portal Huerta-*");
+
+    return true;
+}
+
 void ProvisioningManager::StartStation(const std::string &ssid, const std::string &password)
 {
-    WiFi.mode(state == ProvisioningState::PortalActive || state == ProvisioningState::TestingCredentials
-                  ? WIFI_AP_STA
-                  : WIFI_STA);
+    WiFi.mode(state == ProvisioningState::TestingCredentials ? WIFI_AP_STA : WIFI_STA);
     WiFi.begin(ssid.c_str(), password.c_str());
 }
 
 bool ProvisioningManager::StartPortal()
 {
-    WiFi.mode(WIFI_AP_STA);
-    accessPassword = BuildAccessPassword();
+    // Una vez abierto el portal se detiene por completo la estación. ESP32 comparte
+    // una sola radio: reintentar STA puede cambiar de canal y volver inestable el AP.
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    WiFi.mode(WIFI_AP);
+    if (!EnsureAccessPointPassword())
+    {
+        Serial.println("No fue posible cargar o guardar la clave estable del portal");
+        state = ProvisioningState::Connecting;
+        stateStartedAt = millis();
+        return false;
+    }
+
     const std::string accessPointName = BuildAccessPointName(activeConfiguration.deviceId);
 
-    if (!WiFi.softAP(accessPointName.c_str(), accessPassword.c_str(), 1, false, 1))
+    if (!WiFi.softAPConfig(ACCESS_POINT_IP, ACCESS_POINT_GATEWAY, ACCESS_POINT_SUBNET))
+    {
+        Serial.println("No fue posible configurar la red local en 192.168.4.1");
+        state = ProvisioningState::Connecting;
+        stateStartedAt = millis();
+        return false;
+    }
+
+    if (!WiFi.softAP(accessPointName.c_str(), accessPassword.c_str(), 1, false, 2))
     {
         Serial.println("No se pudo iniciar el modo de configuracion local");
-        state = ProvisioningState::Stopped;
+        state = ProvisioningState::Connecting;
+        stateStartedAt = millis();
         return false;
     }
 
@@ -163,14 +215,13 @@ bool ProvisioningManager::StartPortal()
     webServer.begin();
     dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
     portalStatus = "Esperando credenciales Wi-Fi.";
-    portalStartedAt = millis();
-    stateStartedAt = portalStartedAt;
+    stateStartedAt = millis();
     state = ProvisioningState::PortalActive;
 
-    Serial.println("Modo de configuracion local activo durante 5 minutos");
+    Serial.println("Modo de configuracion local activo hasta recuperar la conexion Wi-Fi");
     Serial.printf("Red: %s | URL: http://%s | Usuario: %s\n",
                   accessPointName.c_str(), WiFi.softAPIP().toString().c_str(), PORTAL_USER);
-    Serial.printf("Clave temporal de acceso: %s\n", accessPassword.c_str());
+    Serial.printf("Clave estable de acceso: %s\n", accessPassword.c_str());
     return true;
 }
 
@@ -180,7 +231,6 @@ void ProvisioningManager::StopPortal()
     webServer.stop();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
-    accessPassword.clear();
 }
 
 void ProvisioningManager::ConfigureRoutes()
@@ -191,6 +241,12 @@ void ProvisioningManager::ConfigureRoutes()
     webServer.on("/", HTTP_GET, [this]() { HandleRoot(); });
     webServer.on("/configure", HTTP_POST, [this]() { HandleConfigure(); });
     webServer.on("/status", HTTP_GET, [this]() { HandleStatus(); });
+    webServer.on("/generate_204", HTTP_GET, [this]() { HandleCaptivePortalProbe(); });
+    webServer.on("/gen_204", HTTP_GET, [this]() { HandleCaptivePortalProbe(); });
+    webServer.on("/hotspot-detect.html", HTTP_GET, [this]() { HandleCaptivePortalProbe(); });
+    webServer.on("/library/test/success.html", HTTP_GET, [this]() { HandleCaptivePortalProbe(); });
+    webServer.on("/connecttest.txt", HTTP_GET, [this]() { HandleCaptivePortalProbe(); });
+    webServer.on("/ncsi.txt", HTTP_GET, [this]() { HandleCaptivePortalProbe(); });
     webServer.onNotFound([this]() { HandleNotFound(); });
     routesConfigured = true;
 }
@@ -232,13 +288,26 @@ void ProvisioningManager::HandleConfigure()
     candidateConfiguration.wifiSsid.assign(ssid.c_str(), ssid.length());
     candidateConfiguration.wifiPassword.assign(password.c_str(), password.length());
 
+    // En una prueba WIFI_OUTAGE, el envío del formulario representa la acción
+    // explícita del usuario que autoriza un nuevo intento de estación.
+    if (wifiOutageTestActive)
+    {
+        wifiOutageTestActive = false;
+        wifiOutageTestStartedAt = 0;
+        wifiOutageTestDurationMs = 0;
+        Serial.println("WIFI_OUTAGE cancelado para probar las credenciales enviadas");
+    }
+
     portalStatus = "Probando conexion. La configuracion aun no ha sido guardada.";
     state = ProvisioningState::TestingCredentials;
     stateStartedAt = millis();
-    StartStation(candidateConfiguration.wifiSsid, candidateConfiguration.wifiPassword);
 
     webServer.send(202, "text/html; charset=utf-8",
-                   "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><p>Probando conexion...</p><p><a href=\"/status\">Consultar estado</a></p></html>");
+                   "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><p>Probando conexion...</p><p>La red Huerta puede desconectarse brevemente durante la prueba.</p><p><a href=\"/status\">Consultar estado</a></p></html>");
+
+    // Se inicia STA solamente después de responder al navegador. Durante la prueba
+    // el AP permanece levantado en modo AP+STA.
+    StartStation(candidateConfiguration.wifiSsid, candidateConfiguration.wifiPassword);
 }
 
 void ProvisioningManager::HandleStatus()
@@ -252,10 +321,13 @@ void ProvisioningManager::HandleStatus()
 
 void ProvisioningManager::HandleNotFound()
 {
-    if (!EnsureAuthenticated())
-        return;
+    HandleCaptivePortalProbe();
+}
 
-    webServer.sendHeader("Location", "/", true);
+void ProvisioningManager::HandleCaptivePortalProbe()
+{
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.sendHeader("Location", "http://192.168.4.1/", true);
     webServer.send(302, "text/plain", "");
 }
 
@@ -272,6 +344,7 @@ void ProvisioningManager::CompleteCredentialTest()
     updatePending = true;
     portalStatus = "Conexion verificada y configuracion guardada.";
     Serial.println("Credenciales Wi-Fi verificadas y guardadas en NVS");
+    WiFi.setAutoReconnect(true);
     StopPortal();
     state = ProvisioningState::Connected;
 }
@@ -280,9 +353,10 @@ void ProvisioningManager::FailCredentialTest(const char *message)
 {
     portalStatus = message;
     state = ProvisioningState::PortalActive;
-
-    if (activeConfiguration.HasWifiConfiguration())
-        StartStation(activeConfiguration.wifiSsid, activeConfiguration.wifiPassword);
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    WiFi.mode(WIFI_AP);
+    Serial.println("Prueba Wi-Fi fallida; el portal permanece activo sin nuevos reintentos");
 }
 
 std::string ProvisioningManager::BuildAccessPassword()
@@ -296,6 +370,23 @@ std::string ProvisioningManager::BuildAccessPassword()
         password.push_back(ALPHABET[esp_random() % (sizeof(ALPHABET) - 1)]);
 
     return password;
+}
+
+bool ProvisioningManager::EnsureAccessPointPassword()
+{
+    if (accessPassword.size() >= 8 && accessPassword.size() <= 63)
+        return true;
+
+    if (configurationManager.LoadAccessPointPassword(accessPassword))
+        return true;
+
+    const std::string generated = BuildAccessPassword();
+    if (!configurationManager.SaveAccessPointPassword(generated))
+        return false;
+
+    accessPassword = generated;
+    Serial.println("Clave estable del portal creada y guardada en NVS");
+    return true;
 }
 
 std::string ProvisioningManager::BuildAccessPointName(const std::string &deviceId)

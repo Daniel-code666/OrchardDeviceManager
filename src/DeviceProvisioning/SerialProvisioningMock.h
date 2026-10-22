@@ -4,6 +4,7 @@
 #include "../CredentialProvisioning/MqttCredentialProvisioningManager.h"
 #include "../Recovery/DeviceRecoveryManager.h"
 #include "../Ota/FirmwareUpdateManager.h"
+#include "../Provisioning/ProvisioningManager.h"
 #include "../Sensors/Sensors.h"
 
 #include <string>
@@ -11,7 +12,8 @@
 class SerialProvisioningMock
 {
 public:
-    SerialProvisioningMock(DeviceProvisioningManager &manager,
+    SerialProvisioningMock(ProvisioningManager &wifiProvisioningManager,
+                           DeviceProvisioningManager &manager,
                            MqttCredentialProvisioningManager &credentialManager,
                            DeviceRecoveryManager &recoveryManager,
                            FirmwareUpdateManager &firmwareUpdateManager,
@@ -24,6 +26,7 @@ public:
 private:
     static constexpr size_t MAX_RESPONSE_LENGTH = 6144;
 
+    ProvisioningManager &wifiProvisioningManager;
     DeviceProvisioningManager &manager;
     MqttCredentialProvisioningManager &credentialManager;
     DeviceRecoveryManager &recoveryManager;

@@ -14,6 +14,7 @@ namespace
     constexpr const char *KEY_MQTT_CLIENT_ID = "mqtt_client";
     constexpr const char *KEY_MQTT_USER = "mqtt_user";
     constexpr const char *KEY_MQTT_PASSWORD = "mqtt_pass";
+    constexpr const char *KEY_ACCESS_POINT_PASSWORD = "portal_pass";
     constexpr const char *KEY_BACKUP_COMMITTED = "bak_commit";
     constexpr const char *KEY_BACKUP_VERSION = "bak_ver";
     constexpr const char *KEY_BACKUP_DEVICE_ID = "bak_device";
@@ -255,6 +256,40 @@ bool ConfigurationManager::ClearWifi() const
     configuration.wifiPassword.clear();
 
     return Save(configuration);
+}
+
+bool ConfigurationManager::LoadAccessPointPassword(std::string &password) const
+{
+    Preferences preferences;
+    if (!preferences.begin(NAMESPACE, true))
+        return false;
+
+    const std::string loaded = ReadString(preferences, KEY_ACCESS_POINT_PASSWORD);
+    preferences.end();
+
+    if (loaded.size() < 8 || loaded.size() > 63)
+        return false;
+
+    password = loaded;
+    return true;
+}
+
+bool ConfigurationManager::SaveAccessPointPassword(const std::string &password) const
+{
+    if (password.size() < 8 || password.size() > 63)
+        return false;
+
+    Preferences preferences;
+    if (!preferences.begin(NAMESPACE, false))
+        return false;
+
+    const bool saved = WriteString(preferences, KEY_ACCESS_POINT_PASSWORD, password);
+    preferences.end();
+    if (!saved)
+        return false;
+
+    std::string persisted;
+    return LoadAccessPointPassword(persisted) && persisted == password;
 }
 
 ProvisioningLoadResult ConfigurationManager::LoadProvisioning(ProvisioningRecord &record) const

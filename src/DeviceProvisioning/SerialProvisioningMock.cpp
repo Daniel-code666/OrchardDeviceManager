@@ -7,13 +7,46 @@
 
 #include <Arduino.h>
 
+namespace
+{
+    bool TryParseWifiOutageDuration(const std::string &input, uint32_t &durationSeconds)
+    {
+        constexpr const char *PREFIX = "WIFI_OUTAGE ";
+        constexpr size_t PREFIX_LENGTH = 12;
+        constexpr uint32_t MAX_DURATION_SECONDS = 3600;
+
+        if (input.rfind(PREFIX, 0) != 0 || input.size() == PREFIX_LENGTH)
+            return false;
+
+        uint32_t parsed = 0;
+        for (size_t index = PREFIX_LENGTH; index < input.size(); ++index)
+        {
+            const char character = input[index];
+            if (character < '0' || character > '9')
+                return false;
+
+            parsed = parsed * 10U + static_cast<uint32_t>(character - '0');
+            if (parsed > MAX_DURATION_SECONDS)
+                return false;
+        }
+
+        if (parsed == 0)
+            return false;
+
+        durationSeconds = parsed;
+        return true;
+    }
+}
+
 SerialProvisioningMock::SerialProvisioningMock(
+    ProvisioningManager &wifiManager,
     DeviceProvisioningManager &provisioningManager,
     MqttCredentialProvisioningManager &mqttCredentialManager,
     DeviceRecoveryManager &deviceRecoveryManager,
     FirmwareUpdateManager &otaManager,
     Sensors &deviceSensors)
-    : manager(provisioningManager), credentialManager(mqttCredentialManager),
+    : wifiProvisioningManager(wifiManager), manager(provisioningManager),
+      credentialManager(mqttCredentialManager),
       recoveryManager(deviceRecoveryManager), firmwareUpdateManager(otaManager), sensors(deviceSensors)
 {
     inputBuffer.reserve(MAX_RESPONSE_LENGTH);
@@ -103,6 +136,20 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
         Serial.printf("Estado OTA: %s | Progreso: %u%%\n",
                       ToString(firmwareUpdateManager.GetState()),
                       firmwareUpdateManager.GetProgressPercent());
+        return;
+    }
+
+    if (inputBuffer.rfind("WIFI_OUTAGE", 0) == 0)
+    {
+        uint32_t durationSeconds = 0;
+        if (!TryParseWifiOutageDuration(inputBuffer, durationSeconds))
+        {
+            Serial.println("Uso: WIFI_OUTAGE <segundos>; rango permitido: 1-3600");
+            return;
+        }
+
+        if (!wifiProvisioningManager.StartWifiOutageTest(now, durationSeconds))
+            Serial.println("No fue posible iniciar WIFI_OUTAGE: prueba activa o Wi-Fi no configurado");
         return;
     }
 
