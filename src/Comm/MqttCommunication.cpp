@@ -1,54 +1,32 @@
 #include "MqttCommunication.h"
-#include "Objects/Topics.h"
-#include "../Utils/EnumsSwitch.h"
 #include <ArduinoJson.h>
 #include <string.h>
 
 namespace
 {
-    EnumsSwitch enumSwitch = EnumsSwitch();
     JsonConverter jsonConverter = JsonConverter();
 }
 
 // constructor
-MqttCommunication::MqttCommunication(const char *brokerHost, uint16_t brokerPort, const char *clientId,
-                                     const char *brokerUser, const char *brokerPass) : wifiClient(), mqttClient(wifiClient), brokerHost(brokerHost), brokerPort(brokerPort), clientId(clientId),
-                                                                                       brokerUser(brokerUser), brokerPass(brokerPass) {};
+MqttCommunication::MqttCommunication() : wifiClient(), mqttClient(wifiClient), configuration(), initialized(false) {}
 
-// validación al momento de cualquier evento de wifi
-void OnWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
+// Inicializa MQTT. El ciclo Wi-Fi pertenece a ProvisioningManager.
+bool MqttCommunication::Init(const DeviceConfiguration &newConfiguration)
 {
-    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
-    {
-        Serial.print("Desconexion WiFi | Razon: ");
-        Serial.println(info.wifi_sta_disconnected.reason);
-    }
-    else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
-    {
-        Serial.print("Conectado | IP: ");
-        Serial.println(WiFi.localIP());
-    }
-}
+    if (!newConfiguration.IsValid())
+        return false;
 
-// incializa el wifi y conecta con rabbitmq
-void MqttCommunication::Init()
-{
-    // Establece el modo de wifi del esp a modo de cliente para conectarse a una red existente
-    WiFi.mode(WIFI_STA);
+    DeviceTopics newTopics;
+    if (!DeviceTopics::TryCreate(newConfiguration.deviceId, newTopics))
+        return false;
 
-    WiFi.onEvent(OnWiFiEvent);
+    configuration = newConfiguration;
+    topics = std::move(newTopics);
 
-    // inicia la conexión a la red
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.print("\nWiFi conectado | IP: \n");
-        Serial.println(WiFi.localIP());
-    }
+    mqttClient.disconnect();
 
     // configura el servidor para la conexión a rabbit
-    mqttClient.setServer(brokerHost, brokerPort);
+    mqttClient.setServer(configuration.mqttHost.c_str(), configuration.mqttPort);
 
     mqttClient.setCallback(
         [this](char *topic, byte *payload, unsigned int length)
@@ -59,11 +37,20 @@ void MqttCommunication::Init()
     // establece el tamaño del buffer
     mqttClient.setBufferSize(2048);
 
-    Serial.println("\nWiFi inicializado. Esperando conexion...\n");
+    initialized = true;
+
+    Serial.println("\nMQTT inicializado. Esperando conexion Wi-Fi...\n");
+    return true;
 };
 
 void MqttCommunication::HandleMessage(char *topic, byte *payload, int length)
 {
+    if (topic == nullptr || topics.actions != topic)
+    {
+        Serial.println("Mensaje MQTT rechazado: topic no autorizado para este dispositivo");
+        return;
+    }
+
     ActionMessage actionMessage;
 
     Serial.printf("\nMensaje recibido en: %s\n", topic);
@@ -100,6 +87,9 @@ bool MqttCommunication::TryTakeAction(ActionMessage& result)
 
 bool MqttCommunication::Connect()
 {
+    if (!initialized)
+        return false;
+
     if (WiFi.status() != WL_CONNECTED)
         return false;
 
@@ -107,7 +97,11 @@ bool MqttCommunication::Connect()
         return true;
 
     // conectar al broker
-    bool connected = mqttClient.connect(clientId, brokerUser, brokerPass);
+    // Sesion limpia: los comandos no deben acumularse mientras el dispositivo esta desconectado.
+    bool connected = mqttClient.connect(configuration.mqttClientId.c_str(),
+                                        configuration.mqttUser.c_str(),
+                                        configuration.mqttPassword.c_str(),
+                                        nullptr, 0, false, nullptr, true);
 
     // imprimir que esté o no conectado
     if (!connected)
@@ -118,14 +112,14 @@ bool MqttCommunication::Connect()
         return false;
     }
 
-    bool subscribed = mqttClient.subscribe(enumSwitch.TopicsName(Topics::Actions).c_str());
+    bool subscribed = mqttClient.subscribe(topics.actions.c_str());
 
     // devuelve el estado de la conexión
     Serial.print("\nConectado al broker\n");
 
     Serial.printf(
         "Suscripcion MQTT | Topic: [%s] | Resultado: %s\n",
-        enumSwitch.TopicsName(Topics::Actions).c_str(),
+        topics.actions.c_str(),
         subscribed ? "OK" : "ERROR");
 
     return true;
@@ -133,6 +127,9 @@ bool MqttCommunication::Connect()
 
 bool MqttCommunication::Loop()
 {
+    if (!initialized)
+        return false;
+
     if (WiFi.status() != WL_CONNECTED)
         return false;
 
@@ -175,7 +172,7 @@ bool MqttCommunication::PublishTelemetry(FullTelemetry &fullTelemetry)
     JsonDocument doc = jsonConverter.LoadDataIntoJson(fullTelemetry);
     serializeJson(doc, payload);
 
-    bool published = mqttClient.publish(enumSwitch.TopicsName(Topics::Telemetry).c_str(), payload.c_str());
+    bool published = mqttClient.publish(topics.telemetry.c_str(), payload.c_str());
 
     Serial.print("\nMensaje enviado, publicado:\n");
     Serial.print(published);
@@ -193,9 +190,7 @@ bool MqttCommunication::PublishActionResponse(const ActionResult& result)
     std::string payload;
     serializeJson(doc, payload);
 
-    std::string topic = enumSwitch.TopicsName(Topics::ActionsResponse);
-
-    bool published = mqttClient.publish(topic.c_str(), payload.c_str());
+    bool published = mqttClient.publish(topics.actionsResponse.c_str(), payload.c_str());
 
     Serial.printf("Respuesta publicada: %s | Bytes: %u\n", published ? "SI" : "NO",  static_cast<unsigned>(payload.size()));
 
@@ -204,6 +199,12 @@ bool MqttCommunication::PublishActionResponse(const ActionResult& result)
 
 void MqttCommunication::TestBrokerConnection()
 {
+    if (!initialized)
+    {
+        Serial.println("Comunicacion no inicializada");
+        return;
+    }
+
     if (WiFi.status() != WL_CONNECTED)
     {
         Serial.println("WiFi no conectado");
@@ -214,7 +215,7 @@ void MqttCommunication::TestBrokerConnection()
 
     Serial.println("Probando conexion TCP con RabbitMQ...");
 
-    if (client.connect(MQTT_HOST, MQTT_PORT, 3000))
+    if (client.connect(configuration.mqttHost.c_str(), configuration.mqttPort, 3000))
     {
         Serial.println("Conexion TCP exitosa");
         client.stop();

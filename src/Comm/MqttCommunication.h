@@ -4,7 +4,9 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <PubSubClient.h>
-#include "../Secrets.h"
+#include <string>
+#include "../Configuration/DeviceConfiguration.h"
+#include "DeviceTopics.h"
 #include "../Objects/FullTelemetry.h"
 #include "Utils/JsonConverter.h"
 #include "ActionDispatcher/ActionDispatcher.h"
@@ -13,9 +15,9 @@
 class MqttCommunication
 {
     public:
-        explicit MqttCommunication(const char* brokerHost, uint16_t brokerPort, const char* clientId, const char* brokerUser, const char* brokerPass);
+        MqttCommunication();
         
-        void Init();
+        bool Init(const DeviceConfiguration& configuration);
         bool Connect();
         bool IsConnected();
         bool PublishTelemetry(FullTelemetry& fullTelemetry);
@@ -29,11 +31,9 @@ class MqttCommunication
         WiFiClient wifiClient;
         PubSubClient mqttClient;
 
-        const char* brokerHost;
-        const uint16_t brokerPort;
-        const char* clientId;
-        const char* brokerUser;
-        const char* brokerPass;
+        DeviceConfiguration configuration;
+        DeviceTopics topics;
+        bool initialized;
 
         void HandleMessage(char* topic, byte* payload, int length);
         std::optional<ActionMessage> pendingAction;

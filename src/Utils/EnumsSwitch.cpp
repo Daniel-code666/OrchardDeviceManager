@@ -46,17 +46,6 @@ std::string EnumsSwitch::PumpControlModeName(PumpControlMode pumpControlMode)
     }
 }
 
-std::string EnumsSwitch::TopicsName(Topics topic)
-{
-    switch(topic)
-    {
-        case Topics::Telemetry: return "Telemetry";
-        case Topics::Actions: return "Actions";
-        case Topics::ActionsResponse: return "ActionsResponse";
-        default: return "Unknow";
-    }
-}
-
 std::string EnumsSwitch::CommandName(Commands command)
 {
     switch (command)

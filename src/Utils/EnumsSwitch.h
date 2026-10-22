@@ -6,7 +6,6 @@
 #include "../Objects/MeasurementUnits.h"
 #include "../Objects/ConnectionType.h"
 #include "../Objects/PumpControlMode.h"
-#include "../Objects/Topics.h"
 #include "../Objects/ActionMessage.h"
 #include "../Objects/Commands.h"
 #include <vector>
@@ -21,7 +20,6 @@ class EnumsSwitch
         std::string MeasurementUnitsName(MeasurementUnits measurementName);
         std::string ConnectionTypeName(ConnectionType connType);
         std::string PumpControlModeName(PumpControlMode pumpControlMode);
-        std::string TopicsName(Topics topic);
         std::string CommandName(Commands command);
         std::string CommandNameByString(std::string command);
         std::optional<Commands> CommandFromString(const std::string& command);
