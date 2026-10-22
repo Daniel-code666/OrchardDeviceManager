@@ -43,6 +43,15 @@ bool MqttCommunication::Init(const DeviceConfiguration &newConfiguration)
     return true;
 };
 
+void MqttCommunication::Stop()
+{
+    mqttClient.disconnect();
+    pendingAction.reset();
+    configuration = DeviceConfiguration{};
+    topics = DeviceTopics{};
+    initialized = false;
+}
+
 void MqttCommunication::HandleMessage(char *topic, byte *payload, int length)
 {
     if (topic == nullptr || topics.actions != topic)

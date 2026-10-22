@@ -14,6 +14,7 @@ public:
     bool StartClaim(unsigned long now);
     void Loop(unsigned long now);
     ClaimProcessingResult ProcessResponse(const ClaimResponse &response, unsigned long now);
+    bool AuthorizeUnlink();
 
     DeviceProvisioningState GetState() const;
     bool IsProvisioned() const;

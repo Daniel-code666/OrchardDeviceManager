@@ -18,6 +18,7 @@ class MqttCommunication
         MqttCommunication();
         
         bool Init(const DeviceConfiguration& configuration);
+        void Stop();
         bool Connect();
         bool IsConnected();
         bool PublishTelemetry(FullTelemetry& fullTelemetry);

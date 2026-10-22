@@ -21,6 +21,7 @@ public:
     bool TryTakeCandidate(DeviceConfiguration &configuration, uint32_t &credentialVersion);
     bool ConfirmApplied(uint32_t credentialVersion);
     void RejectCandidate();
+    void Reset();
     uint32_t GetAppliedCredentialVersion() const;
 
 private:

@@ -9,6 +9,9 @@
 #include "../Provisioning/ProvisioningManager.h"
 #include "../DeviceProvisioning/DeviceProvisioningManager.h"
 #include "../CredentialProvisioning/MqttCredentialProvisioningManager.h"
+#include "../Recovery/DeviceRecoveryManager.h"
+#include "../Ota/FirmwareUpdateManager.h"
+#include "../Constants/FirmwareVersion.h"
 #if ENABLE_LOCAL_PROVISIONING_MOCK
 #include "../DeviceProvisioning/SerialProvisioningMock.h"
 #endif
@@ -23,13 +26,19 @@ namespace
     ProvisioningManager provisioningManager(configurationManager);
     DeviceProvisioningManager deviceProvisioningManager(configurationManager);
     MqttCredentialProvisioningManager mqttCredentialManager(configurationManager);
+    DeviceRecoveryManager deviceRecoveryManager(configurationManager, deviceProvisioningManager);
+    FirmwareUpdateManager firmwareUpdateManager(configurationManager);
 #if ENABLE_LOCAL_PROVISIONING_MOCK
-    SerialProvisioningMock serialProvisioningMock(deviceProvisioningManager, mqttCredentialManager);
+    SerialProvisioningMock serialProvisioningMock(
+        deviceProvisioningManager, mqttCredentialManager, deviceRecoveryManager,
+        firmwareUpdateManager, sensors);
 #endif
     MqttCommunication comm;
     DeviceConfiguration activeConfiguration;
     bool mqttInitialized = false;
     bool credentialProvisioningInitialized = false;
+    bool recoveryInitialized = false;
+    bool localSystemHealthy = false;
     bool credentialUpdateInProgress = false;
     DeviceConfiguration credentialCandidate;
     uint32_t credentialCandidateVersion = 0;
@@ -56,6 +65,8 @@ namespace
 
         Serial.printf("Version de credenciales MQTT aplicada: %lu\n",
                       static_cast<unsigned long>(mqttCredentialManager.GetAppliedCredentialVersion()));
+        if (deviceRecoveryManager.IsMqttRevoked())
+            mqttCredentialManager.StartRequest();
 #if ENABLE_LOCAL_PROVISIONING_MOCK
         serialProvisioningMock.AnnouncePendingCredentialRequest();
 #endif
@@ -81,7 +92,20 @@ namespace
             serialProvisioningMock.AnnouncePendingRequest();
 #endif
 
+        if (state == DeviceProvisioningState::Unprovisioned)
+        {
+            comm.Stop();
+            mqttInitialized = false;
+            credentialProvisioningInitialized = false;
+            credentialUpdateInProgress = false;
+            mqttCredentialManager.Reset();
+            if (!deviceProvisioningManager.StartClaim(millis()))
+                Serial.println("No fue posible iniciar una nueva solicitud de vinculacion");
+            return;
+        }
+
         if (state == DeviceProvisioningState::Provisioned &&
+            !deviceRecoveryManager.IsMqttRevoked() &&
             !mqttInitialized && activeConfiguration.IsValid())
         {
             mqttInitialized = comm.Init(activeConfiguration);
@@ -112,14 +136,23 @@ namespace
 void setup()
 {
     Serial.begin(115200);
+    if (!firmwareUpdateManager.Begin(FIRMWARE_VERSION))
+        Serial.println("Gestor OTA no disponible");
+    else
+        Serial.printf("Firmware actual: %s | Estado OTA: %s\n", FIRMWARE_VERSION,
+                      ToString(firmwareUpdateManager.GetState()));
 
-    const ConfigurationLoadResult loadResult = configurationManager.Load(activeConfiguration);
+    bool recoveredFromBackup = false;
+    const ConfigurationLoadResult loadResult = configurationManager.LoadRecoverable(
+        activeConfiguration, recoveredFromBackup);
     bool configurationAvailable = loadResult == ConfigurationLoadResult::Loaded;
 
     if (configurationAvailable)
     {
         Serial.printf("Configuracion cargada desde NVS | Version: %u | DeviceId: %s\n",
                       activeConfiguration.version, activeConfiguration.deviceId.c_str());
+        if (recoveredFromBackup)
+            Serial.println("Configuracion principal recuperada desde la ultima copia valida");
     }
     else
     {
@@ -146,9 +179,15 @@ void setup()
     if (!configurationAvailable || !provisioningManager.Begin(activeConfiguration))
         Serial.println("Wi-Fi y aprovisionamiento local deshabilitados: falta configuracion base");
 
+    bool deviceProvisioningAvailable = false;
     if (configurationAvailable &&
         deviceProvisioningManager.Begin(activeConfiguration.deviceId, millis()))
     {
+        deviceProvisioningAvailable = true;
+        recoveryInitialized = deviceRecoveryManager.Begin(activeConfiguration.deviceId);
+        if (!recoveryInitialized)
+            Serial.println("Recuperacion deshabilitada: no fue posible validar su estado persistente");
+
         if (deviceProvisioningManager.GetState() == DeviceProvisioningState::Unprovisioned &&
             !deviceProvisioningManager.StartClaim(millis()))
             Serial.println("No fue posible iniciar la solicitud de vinculacion");
@@ -165,6 +204,7 @@ void setup()
     Serial.print("Sensores inicializados...\n");
     Serial.print("LECTURAS OBTENIDAS \n");
     lastRead = millis();
+    localSystemHealthy = configurationAvailable && deviceProvisioningAvailable;
 }
 
 void loop()
@@ -172,10 +212,32 @@ void loop()
     provisioningManager.Loop();
 
     const unsigned long currentTime = millis();
+    firmwareUpdateManager.Loop(currentTime, localSystemHealthy);
     deviceProvisioningManager.Loop(currentTime);
 #if ENABLE_LOCAL_PROVISIONING_MOCK
     serialProvisioningMock.Loop(currentTime);
 #endif
+
+    if (recoveryInitialized && deviceRecoveryManager.IsMqttRevoked() && mqttInitialized &&
+        !credentialUpdateInProgress)
+    {
+        comm.Stop();
+        mqttInitialized = false;
+        Serial.println("MQTT detenido: credenciales revocadas");
+    }
+
+    if (recoveryInitialized && deviceRecoveryManager.IsMqttRevoked() &&
+        deviceProvisioningManager.IsProvisioned() && credentialProvisioningInitialized)
+    {
+        MqttCredentialRequest pendingRequest;
+        if (!mqttCredentialManager.TryGetPendingRequest(pendingRequest) &&
+            mqttCredentialManager.StartRequest())
+        {
+#if ENABLE_LOCAL_PROVISIONING_MOCK
+            serialProvisioningMock.AnnouncePendingCredentialRequest();
+#endif
+        }
+    }
 
     if (!credentialUpdateInProgress &&
         mqttCredentialManager.TryTakeCandidate(credentialCandidate, credentialCandidateVersion))
@@ -224,8 +286,17 @@ void loop()
                     credentialUpdateInProgress = false;
                     credentialCandidate = DeviceConfiguration{};
                     credentialConnectionStableStartedAt = 0;
-                    Serial.printf("Credenciales MQTT version %lu verificadas y guardadas\n",
-                                  static_cast<unsigned long>(credentialCandidateVersion));
+                    if (deviceRecoveryManager.MarkCredentialsRestored())
+                    {
+                        Serial.printf("Credenciales MQTT version %lu verificadas y guardadas\n",
+                                      static_cast<unsigned long>(credentialCandidateVersion));
+                    }
+                    else
+                    {
+                        comm.Stop();
+                        mqttInitialized = false;
+                        Serial.println("Credenciales guardadas, pero MQTT permanece bloqueado por seguridad");
+                    }
                     credentialCandidateVersion = 0;
                 }
                 else
@@ -245,7 +316,8 @@ void loop()
     }
 
     ActionMessage actionMessage{};
-    if (comm.TryTakeAction(actionMessage))
+    if (firmwareUpdateManager.GetState() != OtaRuntimeState::Downloading &&
+        comm.TryTakeAction(actionMessage))
     {
         ActionResult result = dispatcher.Dispatch(actionMessage);
         Serial.printf("Comando ejecutado: %s\n", result.success ? "SI" : "NO");

@@ -166,6 +166,17 @@ void MqttCredentialProvisioningManager::RejectCandidate()
     candidateConfiguration = DeviceConfiguration{};
 }
 
+void MqttCredentialProvisioningManager::Reset()
+{
+    securityRecord = CredentialSecurityRecord{};
+    baseConfiguration = DeviceConfiguration{};
+    candidateConfiguration = DeviceConfiguration{};
+    deviceId.clear();
+    candidateVersion = 0;
+    initialized = false;
+    candidatePending = false;
+}
+
 uint32_t MqttCredentialProvisioningManager::GetAppliedCredentialVersion() const
 {
     return securityRecord.appliedCredentialVersion;

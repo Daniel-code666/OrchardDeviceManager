@@ -4,3 +4,6 @@
 .vscode/launch.json
 .vscode/ipch
 .env
+__pycache__/
+*.pyc
+.ota-local/

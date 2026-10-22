@@ -2,13 +2,19 @@
 
 #include "ProvisioningJson.h"
 #include "../CredentialProvisioning/CredentialProvisioningJson.h"
+#include "../Recovery/RecoveryJson.h"
+#include "../Ota/OtaControlJson.h"
 
 #include <Arduino.h>
 
 SerialProvisioningMock::SerialProvisioningMock(
     DeviceProvisioningManager &provisioningManager,
-    MqttCredentialProvisioningManager &mqttCredentialManager)
-    : manager(provisioningManager), credentialManager(mqttCredentialManager)
+    MqttCredentialProvisioningManager &mqttCredentialManager,
+    DeviceRecoveryManager &deviceRecoveryManager,
+    FirmwareUpdateManager &otaManager,
+    Sensors &deviceSensors)
+    : manager(provisioningManager), credentialManager(mqttCredentialManager),
+      recoveryManager(deviceRecoveryManager), firmwareUpdateManager(otaManager), sensors(deviceSensors)
 {
     inputBuffer.reserve(MAX_RESPONSE_LENGTH);
 }
@@ -92,6 +98,14 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
         return;
     }
 
+    if (inputBuffer == "OTA_STATUS")
+    {
+        Serial.printf("Estado OTA: %s | Progreso: %u%%\n",
+                      ToString(firmwareUpdateManager.GetState()),
+                      firmwareUpdateManager.GetProgressPercent());
+        return;
+    }
+
     ClaimResponse response;
     if (ProvisioningJson::DeserializeResponse(inputBuffer, response))
     {
@@ -105,6 +119,29 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
     {
         const CredentialEnvelopeResult result = credentialManager.ProcessEnvelope(envelope);
         Serial.printf("Resultado de credenciales MQTT: %s\n", ToString(result));
+        return;
+    }
+
+    RecoveryCommand recoveryCommand;
+    if (RecoveryJson::DeserializeCommand(inputBuffer, recoveryCommand))
+    {
+        std::string key;
+        if (!credentialManager.TryGetLocalBootstrapKey(key))
+        {
+            Serial.println("Resultado de recuperacion: invalid_state");
+            return;
+        }
+        const RecoveryCommandResult result = recoveryManager.ProcessCommand(recoveryCommand, key);
+        Serial.printf("Resultado de recuperacion: %s\n", ToString(result));
+        return;
+    }
+
+    std::string manifestUrl;
+    if (OtaControlJson::TryParseUpdateRequest(inputBuffer, manifestUrl))
+    {
+        const OtaStartResult result = firmwareUpdateManager.StartUpdate(
+            manifestUrl, sensors.IsWaterPumpActive());
+        Serial.printf("Resultado de actualizacion OTA: %s\n", ToString(result));
         return;
     }
 

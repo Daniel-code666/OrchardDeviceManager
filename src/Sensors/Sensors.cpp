@@ -179,6 +179,11 @@ bool Sensors::SetWaterPumpMode(int opt)
     return waterPump.SetMode(opt);
 }
 
+bool Sensors::IsWaterPumpActive()
+{
+    return waterPump.GetState();
+}
+
 FullTelemetry Sensors::GetSensorOrActuatorDataById(DeviceIdByType &deviceIdByType)
 {
     FullTelemetry fullTelemetry;

@@ -119,6 +119,15 @@ ClaimProcessingResult DeviceProvisioningManager::ProcessResponse(const ClaimResp
     return TransitionToUnprovisioned() ? result : ClaimProcessingResult::StorageError;
 }
 
+bool DeviceProvisioningManager::AuthorizeUnlink()
+{
+    if (record.state == DeviceProvisioningState::Unprovisioned)
+        return true;
+    if (record.state != DeviceProvisioningState::Provisioned)
+        return false;
+    return TransitionToUnprovisioned();
+}
+
 DeviceProvisioningState DeviceProvisioningManager::GetState() const
 {
     return record.state;

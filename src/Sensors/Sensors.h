@@ -24,6 +24,7 @@ class Sensors {
         FullTelemetry GetDataFromSensors(bool opt);
         bool SetWaterPumpState(std::optional<bool> state = std::nullopt);
         bool SetWaterPumpMode(int opt);
+        bool IsWaterPumpActive();
         FullTelemetry GetSensorOrActuatorDataById(DeviceIdByType& deviceIdByType);
     private:
         void InitializeWire();
