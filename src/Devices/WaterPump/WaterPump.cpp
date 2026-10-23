@@ -34,39 +34,57 @@ bool WaterPump::GetState()
 }
 
 // establece el estado funcional de la bomba, state puede ser null
-bool WaterPump::SetState(float moisturePercentage, float drySoilPercentage, float wetSoilPercentage, std::optional<bool> state)
+bool WaterPump::SetState(float moisturePercentage,float drySoilPercentage,float wetSoilPercentage,std::optional<bool> state)
 {
-    int digitalRawValue = digitalRead(devicePin);
+    const bool currentState = digitalRead(devicePin) == HIGH;
 
-    if (mode == PumpControlMode::Manual && state.has_value())
+    if (mode == PumpControlMode::Manual)
     {
-        if (digitalRawValue == state.value())
+        if (!state.has_value())
             return false;
 
-        digitalWrite(devicePin, state.value() ? HIGH : LOW);
+        const bool requestedState = state.value();
 
-        Serial.println("ESTADO MANUAL DE LA BOMBA MODIFICADO");
+        if (currentState != requestedState)
+        {
+            digitalWrite(devicePin, requestedState ? HIGH : LOW);
+
+            Serial.println(
+                requestedState
+                    ? "BOMBA ENCENDIDA MANUALMENTE"
+                    : "BOMBA APAGADA MANUALMENTE"
+            );
+        }
 
         return true;
     }
-    else if (mode == PumpControlMode::Automatic) 
+
+    if (mode == PumpControlMode::Automatic)
     {
-        if (moisturePercentage <= drySoilPercentage && !digitalRawValue)
+        // Validar las lecturas y el orden de los umbrales
+        if (!std::isfinite(moisturePercentage) ||
+            !std::isfinite(drySoilPercentage) ||
+            !std::isfinite(wetSoilPercentage) ||
+            drySoilPercentage >= wetSoilPercentage)
         {
-            Serial.print("BOMBA DE AGUA ACTIVA, REGANDO PLANTAS");
-            digitalWrite(devicePin, true);
-
-            return true;
-        }
-        else if (moisturePercentage >= wetSoilPercentage && digitalRawValue)
-        {
-            Serial.print("BOMBA DE AGUA INACTIVA");
-            digitalWrite(devicePin, false);
-
-            return true;
+            Serial.println("ERROR: DATOS DE HUMEDAD INVALIDOS");
+            return false;
         }
 
-        return false;
+        if (moisturePercentage <= drySoilPercentage && !currentState)
+        {
+            digitalWrite(devicePin, HIGH);
+
+            Serial.println("BOMBA ACTIVADA AUTOMATICAMENTE");
+        }
+        else if (moisturePercentage >= wetSoilPercentage && currentState)
+        {
+            digitalWrite(devicePin, LOW);
+
+            Serial.println("BOMBA DESACTIVADA AUTOMATICAMENTE");
+        }
+
+        return true;
     }
 
     return false;

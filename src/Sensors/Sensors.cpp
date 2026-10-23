@@ -56,7 +56,11 @@ void Sensors::RegisterIdInstance()
         [](int option)
         {
             return waterPump.SetMode(option);
-        }}
+        },
+        [](float moisturePercentage, float drySoilPercentage, float wetSoilPercentage, std::optional<bool> state)
+        {
+            return waterPump.SetState(moisturePercentage, drySoilPercentage, wetSoilPercentage, state);
+        }},
     };
 }
 
@@ -74,19 +78,44 @@ void Sensors::InitializeSensors()
 }
 
 // establece el estado para el funcionamiento de la bomba, sin estado = automático, 1 encendida, 0 apagada
-// bool Sensors::SetWaterPumpState(std::optional<bool> state)
-// {
-//     // si state tiene valor quiere decir que la bomba está siendo accionada de manera manual, automático de lo contrario
-//     if (state.has_value())
-//         waterPump.SetMode(1);
-//     else
-//         waterPump.SetMode(2);
+bool Sensors::SetWaterPumpState(std::vector<WaterPumpSetMode> data)
+{   
+    if (data.empty())
+        return false;
 
-//     AddedSoilSensorsReadings totalSoilData = SumSoilReadings();
+    bool allWaterPumpsSetted = true;
 
-//     // el valor de state puede ser null
-//     return waterPump.SetState(totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues, state);
-// }
+    AddedSoilSensorsReadings totalSoilData = SumSoilReadings();
+
+    for (const auto &pumpData : data)
+    {
+        bool found = false;
+
+        for (const auto &device : actuatorRegistry)
+        {
+            if (device.id != pumpData.actuatorId)
+                continue;
+
+            found = true;
+
+            if (device.setState == nullptr)
+            {
+                allWaterPumpsSetted = false;
+                break;
+            }
+
+            if (!device.setState(totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues, pumpData.state))
+                    allWaterPumpsSetted = false;
+
+            break;
+        }
+
+        if (!found)
+            allWaterPumpsSetted = false;
+    }
+
+    return allWaterPumpsSetted;
+}
 
 // obtiene los valores de los sensores, opt = true imprime en consola, false lo contrario
 FullTelemetry Sensors::GetDataFromSensors(bool opt)

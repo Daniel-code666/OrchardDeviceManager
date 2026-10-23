@@ -48,7 +48,8 @@ namespace
 ProvisioningManager::ProvisioningManager(ConfigurationManager &manager)
     : configurationManager(manager), webServer(80), state(ProvisioningState::Stopped),
       stateStartedAt(0), updatePending(false), routesConfigured(false),
-      wifiOutageTestActive(false), wifiOutageTestStartedAt(0), wifiOutageTestDurationMs(0)
+      wifiOutageTestActive(false), wifiOutageTestStartedAt(0), wifiOutageTestDurationMs(0),
+      lastPortalAnnouncementAt(0)
 {
 }
 
@@ -104,6 +105,8 @@ void ProvisioningManager::Loop()
         dnsServer.processNextRequest();
         webServer.handleClient();
 
+        if (HasElapsed(lastPortalAnnouncementAt, PORTAL_ANNOUNCEMENT_INTERVAL_MS))
+            AnnouncePortalConnectionInfo();
     }
 
     if (state == ProvisioningState::Connecting)
@@ -218,10 +221,7 @@ bool ProvisioningManager::StartPortal()
     stateStartedAt = millis();
     state = ProvisioningState::PortalActive;
 
-    Serial.println("Modo de configuracion local activo hasta recuperar la conexion Wi-Fi");
-    Serial.printf("Red: %s | URL: http://%s | Usuario: %s\n",
-                  accessPointName.c_str(), WiFi.softAPIP().toString().c_str(), PORTAL_USER);
-    Serial.printf("Clave estable de acceso: %s\n", accessPassword.c_str());
+    AnnouncePortalConnectionInfo();
     return true;
 }
 
@@ -231,6 +231,17 @@ void ProvisioningManager::StopPortal()
     webServer.stop();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
+    lastPortalAnnouncementAt = 0;
+}
+
+void ProvisioningManager::AnnouncePortalConnectionInfo()
+{
+    const std::string accessPointName = BuildAccessPointName(activeConfiguration.deviceId);
+    Serial.println("Modo de configuracion local activo hasta recuperar la conexion Wi-Fi");
+    Serial.printf("Red: %s | URL: http://%s | Usuario: %s\n",
+                  accessPointName.c_str(), WiFi.softAPIP().toString().c_str(), PORTAL_USER);
+    Serial.printf("Clave estable de acceso: %s\n", accessPassword.c_str());
+    lastPortalAnnouncementAt = millis();
 }
 
 void ProvisioningManager::ConfigureRoutes()

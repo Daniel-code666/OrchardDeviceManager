@@ -31,6 +31,8 @@ ActionResult ActionDispatcher::Dispatch(ActionMessage message)
         }
         case Commands::SetWaterPumpState:
         {
+            std::vector<WaterPumpSetMode> resultModeAction = enumSwitch.SetDataForWaterPumpControlModeAction(message);
+            result.success = sensors.SetWaterPumpState(resultModeAction);
             break;
         }
     }

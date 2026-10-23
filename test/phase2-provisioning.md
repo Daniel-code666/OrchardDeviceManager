@@ -12,6 +12,10 @@ ni servicios backend.
 3. Conectarse a la red `Huerta-*` con la clave estable mostrada por serie.
 4. Abrir `http://192.168.4.1` y autenticarse con usuario `admin` y la misma clave.
 5. Verificar que la interfaz no muestra ni devuelve credenciales previamente almacenadas.
+6. Abrir tarde el monitor serie y comprobar que red, URL, usuario y clave vuelven
+   a mostrarse cada 10 segundos mientras el portal siga activo.
+7. Después de conectar correctamente a Wi-Fi, comprobar que el anuncio periódico
+   se detiene.
 
 ## 2. Validación antes de guardar
 

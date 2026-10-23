@@ -1,8 +1,1 @@
-{
-    "type": "claim_request",
-    "contractVersion": 1,
-    "deviceId": "huerta-c3-a0f262a61a68",
-    "requestId": "3b1e7355eabf5a4f0e57bc1d781a2547",
-    "claimCode": "5KZL3LU5DPWC",
-    "expiresInSeconds": 300
-}
+{"type":"claim_request","contractVersion":1,"deviceId":"huerta-c3-8053e09f57e4","requestId":"5f7c10b75cef7d215930711b51285620","claimCode":"Z6P8KBGXJ3NT","expiresInSeconds":300}

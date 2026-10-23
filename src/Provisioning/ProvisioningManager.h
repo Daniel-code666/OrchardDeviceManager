@@ -30,6 +30,7 @@ public:
 private:
     static constexpr unsigned long RECOVERY_DELAY_MS = 30000;
     static constexpr unsigned long CREDENTIAL_TEST_TIMEOUT_MS = 20000;
+    static constexpr unsigned long PORTAL_ANNOUNCEMENT_INTERVAL_MS = 10000;
 
     ConfigurationManager &configurationManager;
     WebServer webServer;
@@ -44,6 +45,7 @@ private:
     bool wifiOutageTestActive;
     unsigned long wifiOutageTestStartedAt;
     unsigned long wifiOutageTestDurationMs;
+    unsigned long lastPortalAnnouncementAt;
     std::string accessPassword;
     std::string portalStatus;
 
@@ -59,6 +61,7 @@ private:
     void HandleNotFound();
     void CompleteCredentialTest();
     void FailCredentialTest(const char *message);
+    void AnnouncePortalConnectionInfo();
 
     static std::string BuildAccessPassword();
     static std::string BuildAccessPointName(const std::string &deviceId);
