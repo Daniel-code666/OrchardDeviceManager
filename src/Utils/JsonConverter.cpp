@@ -29,13 +29,22 @@ bool JsonConverter::Convert(JsonVariantConst json, ActionMessage &result)
     if (!json.is<JsonObjectConst>())
         return false;
 
+    if (!json["requestId"].is<const char*>())
+        return false;
+
     const char* command = json["command"];
     JsonArrayConst params = json["params"].as<JsonArrayConst>();
+    const char* requestId = json["requestId"].as<const char*>();
+
+    if (requestId == nullptr || requestId[0] == '\0' || strlen(requestId) > 64)
+        return false;
 
     if (command == nullptr || params.isNull())
         return false;
 
     ActionMessage parsed{};
+
+    parsed.requestId = requestId;
 
     std::optional<Commands> commandEnum = enumSwitch.CommandFromString(std::string(command));
 
@@ -121,6 +130,7 @@ JsonDocument JsonConverter::ToJson(const ActionResult& result)
 {
     // establece el objeto para enviar al broker
     JsonDocument doc;
+    doc["requestId"] = result.requestId;
     doc["success"] = result.success;
     // organiza el objeto json a partir del objeto fullTelemetry
     JsonDocument telemetryDoc = LoadDataIntoJson(result.telemetry);

@@ -14,6 +14,8 @@ ActionResult ActionDispatcher::Dispatch(ActionMessage message)
 {
     ActionResult result;
 
+    result.requestId = message.requestId;
+
     switch(message.command)
     {
         case Commands::GetSensorOrActuatorDataById:

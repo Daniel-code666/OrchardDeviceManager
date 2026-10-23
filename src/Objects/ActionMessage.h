@@ -8,6 +8,7 @@
 
 struct ActionMessage
 {
+    std::string requestId;
     Commands command;
     std::vector<ParamsBody> params;
 };
