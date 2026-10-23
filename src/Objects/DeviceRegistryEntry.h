@@ -3,10 +3,17 @@
 
 #include "Objects/FullTelemetry.h"
 
-struct DeviceRegistryEntry
+struct SensorRegistryEntry
 {
     int id;
     void (*read)(FullTelemetry&);
+};
+
+struct ActuatorRegistryEntry
+{
+    int id;
+    void (*read)(FullTelemetry&);
+    bool (*setMode)(int);
 };
 
 #endif

@@ -5,6 +5,8 @@
 #include "Objects/ActionResult.h"
 #include "Objects/ActionMessage.h"
 #include "Utils/EnumsSwitch.h"
+#include "Objects/WaterPumpSetMode.h"
+#include <vector>
 
 class ActionDispatcher
 {

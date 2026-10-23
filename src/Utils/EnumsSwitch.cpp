@@ -123,3 +123,24 @@ DeviceIdByType EnumsSwitch::OrganizeIdsByType(ActionMessage& actionMessage)
 
     return deviceIdByType;
 }
+
+std::vector<WaterPumpSetMode> EnumsSwitch::SetDataForWaterPumpControlModeAction(ActionMessage& actionMessage)
+{
+    std::vector<WaterPumpSetMode> result;
+    WaterPumpSetMode data;
+
+    for(const ParamsBody& param : actionMessage.params)
+    {
+        if (param.deviceType != DeviceType::Actuator)
+            continue;
+
+        WaterPumpSetMode data{};
+
+        data.actuatorId = param.deviceId;
+        data.option = param.value;
+
+        result.push_back(data);
+    }
+
+    return result;
+}

@@ -12,18 +12,19 @@
 #include "../Objects/FullTelemetry.h"
 #include "../Objects/DeviceIdByType.h"
 #include "../Objects/DeviceRegistryEntry.h"
+#include "../Objects/WaterPumpSetMode.h"
 
 class Sensors {
     public:
         explicit Sensors();
 
-        std::vector<DeviceRegistryEntry> sensorRegistry;
-        std::vector<DeviceRegistryEntry> actuatorRegistry;
+        std::vector<SensorRegistryEntry> sensorRegistry;
+        std::vector<ActuatorRegistryEntry> actuatorRegistry;
 
         void InitializeSensors();
         FullTelemetry GetDataFromSensors(bool opt);
-        bool SetWaterPumpState(std::optional<bool> state = std::nullopt);
-        bool SetWaterPumpMode(int opt);
+        bool SetWaterPumpState(int actuatorsIds, std::optional<bool> state = std::nullopt);
+        bool SetWaterPumpMode(std::vector<WaterPumpSetMode> data);
         bool IsWaterPumpActive();
         FullTelemetry GetSensorOrActuatorDataById(DeviceIdByType& deviceIdByType);
     private:

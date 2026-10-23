@@ -21,7 +21,8 @@ namespace
 
 // constructor
 Sensors::Sensors()
-{}
+{
+}
 
 void Sensors::RegisterIdInstance()
 {
@@ -47,10 +48,16 @@ void Sensors::RegisterIdInstance()
                             data.sensorReadings.push_back(soilMoistureSensorB.GetSensorData());
                         }}}};
 
-    actuatorRegistry = {{{waterPump.GetDeviceId(), [](FullTelemetry &data)
-                          {
-                              data.actuatorsData.push_back(waterPump.GetActuatorData());
-                          }}}};
+    actuatorRegistry = {{waterPump.GetDeviceId(),
+        [](FullTelemetry &data)
+        {
+            data.actuatorsData.push_back(waterPump.GetActuatorData());
+        },
+        [](int option)
+        {
+            return waterPump.SetMode(option);
+        }}
+    };
 }
 
 // inicializa los sensores
@@ -67,19 +74,19 @@ void Sensors::InitializeSensors()
 }
 
 // establece el estado para el funcionamiento de la bomba, sin estado = automático, 1 encendida, 0 apagada
-bool Sensors::SetWaterPumpState(std::optional<bool> state)
-{
-    // si state tiene valor quiere decir que la bomba está siendo accionada de manera manual, automático de lo contrario
-    if (state.has_value())
-        waterPump.SetMode(1);
-    else
-        waterPump.SetMode(2);
+// bool Sensors::SetWaterPumpState(std::optional<bool> state)
+// {
+//     // si state tiene valor quiere decir que la bomba está siendo accionada de manera manual, automático de lo contrario
+//     if (state.has_value())
+//         waterPump.SetMode(1);
+//     else
+//         waterPump.SetMode(2);
 
-    AddedSoilSensorsReadings totalSoilData = SumSoilReadings();
+//     AddedSoilSensorsReadings totalSoilData = SumSoilReadings();
 
-    // el valor de state puede ser null
-    return waterPump.SetState(totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues, state);
-}
+//     // el valor de state puede ser null
+//     return waterPump.SetState(totalSoilData.AddedPercentage, totalSoilData.AddedDrySoilValues, totalSoilData.AddedWetSoilValues, state);
+// }
 
 // obtiene los valores de los sensores, opt = true imprime en consola, false lo contrario
 FullTelemetry Sensors::GetDataFromSensors(bool opt)
@@ -174,9 +181,34 @@ AddedSoilSensorsReadings Sensors::SumSoilReadings()
 }
 
 // establece el modo de la bomba de agua: 1 manual, 2 automático
-bool Sensors::SetWaterPumpMode(int opt)
+bool Sensors::SetWaterPumpMode(std::vector<WaterPumpSetMode> data)
 {
-    return waterPump.SetMode(opt);
+    bool allPumpsChanged = true;
+
+    for (const auto &pumpData : data)
+    {
+        bool found = false;
+
+        for (const auto &device : actuatorRegistry)
+        {
+            if (device.id == pumpData.actuatorId)
+            {
+                found = true;
+
+                if (device.setMode == nullptr || !device.setMode(pumpData.option))
+                {
+                    allPumpsChanged = false;
+                }
+
+                break;
+            }
+        }
+
+        if (!found)
+            allPumpsChanged = false;
+    }
+
+    return allPumpsChanged;
 }
 
 bool Sensors::IsWaterPumpActive()

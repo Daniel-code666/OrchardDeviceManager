@@ -11,7 +11,9 @@
 #include <vector>
 #include "Objects/DeviceType.h"
 #include "Objects/DeviceIdByType.h"
+#include "Objects/WaterPumpSetMode.h"
 #include <optional>
+#include <vector>
 
 class EnumsSwitch
 {
@@ -26,6 +28,7 @@ class EnumsSwitch
         std::string DeviceTypeName(DeviceType type);
         std::optional<DeviceType> DeviceTypeFromString(const std::string& type);
         DeviceIdByType OrganizeIdsByType(ActionMessage& actionMessage);
+        std::vector<WaterPumpSetMode> SetDataForWaterPumpControlModeAction(ActionMessage& actionMessage);
 };
 
 #endif
