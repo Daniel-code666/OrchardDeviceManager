@@ -6,6 +6,7 @@
 #include "../Ota/FirmwareUpdateManager.h"
 #include "../Provisioning/ProvisioningManager.h"
 #include "../Sensors/Sensors.h"
+#include "../ManagedProvisioning/ManagedProvisioningManager.h"
 
 #include <string>
 
@@ -17,7 +18,8 @@ public:
                            MqttCredentialProvisioningManager &credentialManager,
                            DeviceRecoveryManager &recoveryManager,
                            FirmwareUpdateManager &firmwareUpdateManager,
-                           Sensors &sensors);
+                           Sensors &sensors,
+                           ManagedProvisioningManager &managedProvisioningManager);
 
     void AnnouncePendingRequest() const;
     void AnnouncePendingCredentialRequest() const;
@@ -35,6 +37,7 @@ private:
     DeviceRecoveryManager &recoveryManager;
     FirmwareUpdateManager &firmwareUpdateManager;
     Sensors &sensors;
+    ManagedProvisioningManager &managedProvisioningManager;
     std::string inputBuffer;
     std::string deviceId;
     std::string mqttClientId;

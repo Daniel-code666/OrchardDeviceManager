@@ -47,7 +47,8 @@ namespace
 
 ProvisioningManager::ProvisioningManager(ConfigurationManager &manager)
     : configurationManager(manager), webServer(80), state(ProvisioningState::Stopped),
-      stateStartedAt(0), updatePending(false), routesConfigured(false),
+      stateStartedAt(0), updatePending(false), credentialTestResultPending(false),
+      credentialTestSucceeded(false), managedCredentialTest(false), routesConfigured(false),
       wifiOutageTestActive(false), wifiOutageTestStartedAt(0), wifiOutageTestDurationMs(0),
       lastPortalAnnouncementAt(0)
 {
@@ -141,6 +142,23 @@ bool ProvisioningManager::TryTakeUpdatedConfiguration(DeviceConfiguration &confi
 
     configuration = updatedConfiguration;
     updatePending = false;
+    return true;
+}
+
+bool ProvisioningManager::StartManagedWifiConfiguration(const std::string &ssid,
+                                                         const std::string &password)
+{
+    return StartCredentialTest(ssid, password, true);
+}
+
+bool ProvisioningManager::TryTakeCredentialTestResult(bool &success, std::string &detail)
+{
+    if (!credentialTestResultPending)
+        return false;
+
+    success = credentialTestSucceeded;
+    detail = credentialTestDetail;
+    credentialTestResultPending = false;
     return true;
 }
 
@@ -285,6 +303,12 @@ void ProvisioningManager::HandleConfigure()
     if (!EnsureAuthenticated())
         return;
 
+    if (state == ProvisioningState::TestingCredentials)
+    {
+        webServer.send(409, "text/plain; charset=utf-8", "Ya existe una prueba Wi-Fi en curso");
+        return;
+    }
+
     const String ssid = webServer.arg("ssid");
     const String password = webServer.arg("password");
 
@@ -295,12 +319,27 @@ void ProvisioningManager::HandleConfigure()
         return;
     }
 
-    candidateConfiguration = activeConfiguration;
-    candidateConfiguration.wifiSsid.assign(ssid.c_str(), ssid.length());
-    candidateConfiguration.wifiPassword.assign(password.c_str(), password.length());
+    webServer.send(202, "text/html; charset=utf-8",
+                   "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><p>Probando conexion...</p><p>La red Huerta puede desconectarse brevemente durante la prueba.</p><p><a href=\"/status\">Consultar estado</a></p></html>");
+    StartCredentialTest(std::string(ssid.c_str(), ssid.length()),
+                        std::string(password.c_str(), password.length()), false);
+}
 
-    // En una prueba WIFI_OUTAGE, el envío del formulario representa la acción
-    // explícita del usuario que autoriza un nuevo intento de estación.
+bool ProvisioningManager::StartCredentialTest(const std::string &ssid,
+                                               const std::string &password,
+                                               bool managedRequest)
+{
+    if (state == ProvisioningState::TestingCredentials || ssid.empty() || ssid.size() > 32 ||
+        password.size() > 64 || (!password.empty() && password.size() < 8))
+        return false;
+
+    candidateConfiguration = activeConfiguration;
+    candidateConfiguration.wifiSsid = ssid;
+    candidateConfiguration.wifiPassword = password;
+    managedCredentialTest = managedRequest;
+    credentialTestResultPending = false;
+    credentialTestDetail.clear();
+
     if (wifiOutageTestActive)
     {
         wifiOutageTestActive = false;
@@ -312,13 +351,8 @@ void ProvisioningManager::HandleConfigure()
     portalStatus = "Probando conexion. La configuracion aun no ha sido guardada.";
     state = ProvisioningState::TestingCredentials;
     stateStartedAt = millis();
-
-    webServer.send(202, "text/html; charset=utf-8",
-                   "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><p>Probando conexion...</p><p>La red Huerta puede desconectarse brevemente durante la prueba.</p><p><a href=\"/status\">Consultar estado</a></p></html>");
-
-    // Se inicia STA solamente después de responder al navegador. Durante la prueba
-    // el AP permanece levantado en modo AP+STA.
     StartStation(candidateConfiguration.wifiSsid, candidateConfiguration.wifiPassword);
+    return true;
 }
 
 void ProvisioningManager::HandleStatus()
@@ -353,6 +387,10 @@ void ProvisioningManager::CompleteCredentialTest()
     activeConfiguration = candidateConfiguration;
     updatedConfiguration = activeConfiguration;
     updatePending = true;
+    credentialTestSucceeded = true;
+    credentialTestDetail = "wifi_connected";
+    credentialTestResultPending = true;
+    managedCredentialTest = false;
     portalStatus = "Conexion verificada y configuracion guardada.";
     Serial.println("Credenciales Wi-Fi verificadas y guardadas en NVS");
     WiFi.setAutoReconnect(true);
@@ -363,9 +401,33 @@ void ProvisioningManager::CompleteCredentialTest()
 void ProvisioningManager::FailCredentialTest(const char *message)
 {
     portalStatus = message;
-    state = ProvisioningState::PortalActive;
+    credentialTestSucceeded = false;
+    credentialTestDetail = "wifi_connection_failed";
+    credentialTestResultPending = true;
     WiFi.setAutoReconnect(false);
     WiFi.disconnect(false, false);
+
+    if (managedCredentialTest)
+    {
+        managedCredentialTest = false;
+        candidateConfiguration = DeviceConfiguration{};
+        if (activeConfiguration.HasWifiConfiguration())
+        {
+            StopPortal();
+            StartStation(activeConfiguration.wifiSsid, activeConfiguration.wifiPassword);
+            state = ProvisioningState::Connecting;
+            stateStartedAt = millis();
+            Serial.println("Prueba Wi-Fi fallida; restaurando la red anterior");
+        }
+        else
+        {
+            StartPortal();
+            Serial.println("Prueba Wi-Fi fallida; el portal local permanece disponible");
+        }
+        return;
+    }
+
+    state = ProvisioningState::PortalActive;
     WiFi.mode(WIFI_AP);
     Serial.println("Prueba Wi-Fi fallida; el portal permanece activo sin nuevos reintentos");
 }

@@ -45,10 +45,12 @@ SerialProvisioningMock::SerialProvisioningMock(
     MqttCredentialProvisioningManager &mqttCredentialManager,
     DeviceRecoveryManager &deviceRecoveryManager,
     FirmwareUpdateManager &otaManager,
-    Sensors &deviceSensors)
+    Sensors &deviceSensors,
+    ManagedProvisioningManager &webManagedProvisioningManager)
     : wifiProvisioningManager(wifiManager), manager(provisioningManager),
       credentialManager(mqttCredentialManager),
-      recoveryManager(deviceRecoveryManager), firmwareUpdateManager(otaManager), sensors(deviceSensors)
+      recoveryManager(deviceRecoveryManager), firmwareUpdateManager(otaManager), sensors(deviceSensors),
+      managedProvisioningManager(webManagedProvisioningManager)
 {
     inputBuffer.reserve(MAX_RESPONSE_LENGTH);
 }
@@ -91,6 +93,10 @@ void SerialProvisioningMock::SetDeviceInfo(const std::string &newDeviceId,
 
 void SerialProvisioningMock::Loop(unsigned long now)
 {
+    std::string event;
+    while (managedProvisioningManager.TryTakeEvent(event))
+        Serial.println(event.c_str());
+
     while (Serial.available() > 0)
     {
         const char character = static_cast<char>(Serial.read());
@@ -121,6 +127,15 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
     if (inputBuffer.empty())
         return;
 
+    std::string managedResponse;
+    if (managedProvisioningManager.ProcessSerialMessage(inputBuffer, now, managedResponse))
+    {
+        if (!managedResponse.empty())
+            Serial.println(managedResponse.c_str());
+        return;
+    }
+
+#if ENABLE_LOCAL_PROVISIONING_MOCK
     if (inputBuffer == "PROVISIONING_REQUEST")
     {
         AnnouncePendingRequest();
@@ -218,5 +233,8 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
     }
 
     Serial.println("Respuesta local descartada: JSON o contrato invalido");
+#else
+    Serial.println("Comando serie no admitido");
+#endif
 }
 

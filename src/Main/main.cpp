@@ -10,9 +10,8 @@
 #include "../Ota/FirmwareUpdateManager.h"
 #include "../Identity/DeviceIdentity.h"
 #include "../Constants/FirmwareVersion.h"
-#if ENABLE_LOCAL_PROVISIONING_MOCK
+#include "../ManagedProvisioning/ManagedProvisioningManager.h"
 #include "../DeviceProvisioning/SerialProvisioningMock.h"
-#endif
 #include "Objects/FullTelemetry.h"
 #include "ActionDispatcher/ActionDispatcher.h"
 
@@ -33,11 +32,11 @@ namespace
     MqttCredentialProvisioningManager mqttCredentialManager(configurationManager);
     DeviceRecoveryManager deviceRecoveryManager(configurationManager, deviceProvisioningManager);
     FirmwareUpdateManager firmwareUpdateManager(configurationManager);
-#if ENABLE_LOCAL_PROVISIONING_MOCK
+    ManagedProvisioningManager managedProvisioningManager(
+        provisioningManager, deviceProvisioningManager);
     SerialProvisioningMock serialProvisioningMock(
         provisioningManager, deviceProvisioningManager, mqttCredentialManager, deviceRecoveryManager,
-        firmwareUpdateManager, sensors);
-#endif
+        firmwareUpdateManager, sensors, managedProvisioningManager);
     MqttCommunication comm;
     DeviceConfiguration activeConfiguration;
     bool mqttInitialized = false;
@@ -241,12 +240,10 @@ void setup()
         }
     }
 
-#if ENABLE_LOCAL_PROVISIONING_MOCK
     if (configurationAvailable)
         serialProvisioningMock.SetDeviceInfo(activeConfiguration.deviceId,
                                              activeConfiguration.mqttClientId,
                                              FIRMWARE_VERSION);
-#endif
 
     sensors.InitializeSensors();
 
@@ -271,6 +268,10 @@ void setup()
         Serial.println("Vinculacion deshabilitada: identidad no disponible");
     }
 
+    if (configurationAvailable &&
+        !managedProvisioningManager.Begin(hardwareIdentity, FIRMWARE_VERSION, activeConfiguration))
+        Serial.println("Aprovisionamiento administrado no disponible");
+
     Serial.print("Sensores inicializados...\n");
     Serial.print("LECTURAS OBTENIDAS \n");
     lastRead = millis();
@@ -291,9 +292,8 @@ void loop()
     const unsigned long currentTime = millis();
     firmwareUpdateManager.Loop(currentTime, localSystemHealthy);
     deviceProvisioningManager.Loop(currentTime);
-#if ENABLE_LOCAL_PROVISIONING_MOCK
+    managedProvisioningManager.Loop(currentTime);
     serialProvisioningMock.Loop(currentTime);
-#endif
 
     if (recoveryInitialized && deviceRecoveryManager.IsMqttRevoked() && mqttInitialized &&
         !credentialUpdateInProgress)
@@ -337,6 +337,7 @@ void loop()
     if (provisioningManager.TryTakeUpdatedConfiguration(updatedConfiguration))
     {
         activeConfiguration = updatedConfiguration;
+        managedProvisioningManager.UpdateConfiguration(activeConfiguration);
         mqttCredentialManager.UpdateBaseConfiguration(activeConfiguration);
         if (deviceProvisioningManager.IsProvisioned())
         {

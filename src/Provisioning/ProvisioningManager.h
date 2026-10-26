@@ -24,6 +24,8 @@ public:
     bool Begin(const DeviceConfiguration &configuration);
     void Loop();
     bool TryTakeUpdatedConfiguration(DeviceConfiguration &configuration);
+    bool StartManagedWifiConfiguration(const std::string &ssid, const std::string &password);
+    bool TryTakeCredentialTestResult(bool &success, std::string &detail);
     ProvisioningState GetState() const;
     bool StartWifiOutageTest(unsigned long now, uint32_t durationSeconds);
 
@@ -41,6 +43,9 @@ private:
     ProvisioningState state;
     unsigned long stateStartedAt;
     bool updatePending;
+    bool credentialTestResultPending;
+    bool credentialTestSucceeded;
+    bool managedCredentialTest;
     bool routesConfigured;
     bool wifiOutageTestActive;
     unsigned long wifiOutageTestStartedAt;
@@ -48,6 +53,7 @@ private:
     unsigned long lastPortalAnnouncementAt;
     std::string accessPassword;
     std::string portalStatus;
+    std::string credentialTestDetail;
 
     void StartStation(const std::string &ssid, const std::string &password);
     bool StartPortal();
@@ -59,6 +65,8 @@ private:
     void HandleStatus();
     void HandleCaptivePortalProbe();
     void HandleNotFound();
+    bool StartCredentialTest(const std::string &ssid, const std::string &password,
+                             bool managedRequest);
     void CompleteCredentialTest();
     void FailCredentialTest(const char *message);
     void AnnouncePortalConnectionInfo();

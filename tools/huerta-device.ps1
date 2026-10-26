@@ -68,19 +68,20 @@ function Read-DeviceInfo($Device, [int]$Speed) {
         $serialPort.Open()
         Start-Sleep -Milliseconds 350
         $serialPort.DiscardInBuffer()
-        $serialPort.Write("DEVICE_INFO`n")
+        $identifyRequest = '{"type":"device_identify","contractVersion":1,"requestId":"huerta-device-list"}'
+        $serialPort.Write("$identifyRequest`n")
 
         $output = ''
         $timer = [System.Diagnostics.Stopwatch]::StartNew()
         while ($timer.ElapsedMilliseconds -lt 1800) {
             $output += $serialPort.ReadExisting()
-            if ($output -match 'DEVICE_INFO_END') {
+            if ($output -match '"type":"device_identify_result"') {
                 break
             }
             Start-Sleep -Milliseconds 50
         }
 
-        $match = [regex]::Match($output, '\{"type":"device_info"[^\r\n]*\}')
+        $match = [regex]::Match($output, '\{"type":"device_identify_result"[^\r\n]*\}')
         if (-not $match.Success) {
             $Device.Status = 'legacy-or-no-response'
             return
