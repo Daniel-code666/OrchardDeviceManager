@@ -49,6 +49,8 @@ namespace
     constexpr const char *KEY_OTA_RELEASE = "ota_release";
     constexpr const char *KEY_OTA_TARGET = "ota_target";
     constexpr const char *KEY_OTA_FAILURE = "ota_failure";
+    constexpr const char *KEY_OTA_REQUEST = "ota_request";
+    constexpr const char *KEY_OTA_COMMAND_VERSION = "ota_cmd_ver";
 
     std::string ReadString(Preferences &preferences, const char *key)
     {
@@ -596,7 +598,11 @@ OtaLoadResult ConfigurationManager::LoadOta(OtaRecord &record) const
     loaded.releaseId = ReadString(preferences, KEY_OTA_RELEASE);
     loaded.targetVersion = ReadString(preferences, KEY_OTA_TARGET);
     loaded.failureCode = ReadString(preferences, KEY_OTA_FAILURE);
+    loaded.requestId = ReadString(preferences, KEY_OTA_REQUEST);
+    loaded.commandVersion = preferences.getULong(KEY_OTA_COMMAND_VERSION, 0);
     preferences.end();
+    if (loaded.recordVersion == 1)
+        loaded.recordVersion = OtaRecord::CURRENT_VERSION;
     if (!loaded.IsValid())
         return OtaLoadResult::Invalid;
     record = std::move(loaded);
@@ -626,6 +632,8 @@ bool ConfigurationManager::SaveOta(const OtaRecord &record) const
     success = writeOrRemove(KEY_OTA_RELEASE, record.releaseId) && success;
     success = writeOrRemove(KEY_OTA_TARGET, record.targetVersion) && success;
     success = writeOrRemove(KEY_OTA_FAILURE, record.failureCode) && success;
+    success = writeOrRemove(KEY_OTA_REQUEST, record.requestId) && success;
+    success = preferences.putULong(KEY_OTA_COMMAND_VERSION, record.commandVersion) > 0 && success;
     if (success)
         success = preferences.putBool(KEY_OTA_COMMITTED, true) > 0;
     preferences.end();
@@ -637,5 +645,7 @@ bool ConfigurationManager::SaveOta(const OtaRecord &record) const
            persisted.recordVersion == record.recordVersion && persisted.state == record.state &&
            persisted.releaseId == record.releaseId &&
            persisted.targetVersion == record.targetVersion &&
-           persisted.failureCode == record.failureCode;
+           persisted.failureCode == record.failureCode &&
+           persisted.requestId == record.requestId &&
+           persisted.commandVersion == record.commandVersion;
 }

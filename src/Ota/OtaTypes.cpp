@@ -7,9 +7,13 @@ bool OtaRecord::IsValid() const
     if (recordVersion != CURRENT_VERSION || failureCode.size() > 64)
         return false;
     if (state == OtaPersistentState::Idle)
-        return releaseId.empty() && targetVersion.empty() && failureCode.empty();
+        return releaseId.empty() && targetVersion.empty() && failureCode.empty() &&
+               requestId.empty() && commandVersion == 0;
+    const bool validCommandContext = commandVersion == 0
+                                         ? requestId.empty()
+                                         : IsValidProvisioningIdentifier(requestId, 64);
     return IsValidProvisioningIdentifier(releaseId, 64) &&
-           !targetVersion.empty() && targetVersion.size() <= 32;
+           !targetVersion.empty() && targetVersion.size() <= 32 && validCommandContext;
 }
 
 const char *ToString(OtaPersistentState state)
@@ -55,6 +59,7 @@ const char *ToString(OtaStartResult result)
     case OtaStartResult::StorageError: return "storage_error";
     case OtaStartResult::DownloadUnavailable: return "download_unavailable";
     case OtaStartResult::ImageRejected: return "image_rejected";
+    case OtaStartResult::ReleaseMismatch: return "release_mismatch";
     }
     return "unknown";
 }

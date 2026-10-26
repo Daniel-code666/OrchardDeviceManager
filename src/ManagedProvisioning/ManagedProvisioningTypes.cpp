@@ -37,13 +37,24 @@ bool ManagedBootstrapRequest::IsValid() const
            provisioningToken.size() >= 16 && provisioningToken.size() <= 512;
 }
 
+bool ManagedWifiRecoveryRequest::IsValid() const
+{
+    return contractVersion == CONTRACT_VERSION &&
+           IsValidProvisioningIdentifier(requestId, 64) &&
+           !wifiSsid.empty() && wifiSsid.size() <= 32 &&
+           wifiPassword.size() <= 64 &&
+           (wifiPassword.empty() || wifiPassword.size() >= 8);
+}
+
 bool ManagedProvisioningRecord::IsValid() const
 {
-    ManagedBootstrapRequest request;
-    request.requestId = bootstrapRequestId;
-    request.wifiSsid = "persisted";
-    request.serviceBaseUrl = serviceBaseUrl;
-    request.provisioningToken = provisioningToken;
-    return version == CURRENT_VERSION && request.IsValid();
+    const bool validTokenState = tokenConsumed
+                                     ? provisioningToken.empty()
+                                     : provisioningToken.size() >= 16 &&
+                                           provisioningToken.size() <= 512;
+    return version == CURRENT_VERSION &&
+           IsValidProvisioningIdentifier(bootstrapRequestId, 64) &&
+           IsValidServiceUrl(serviceBaseUrl) && validTokenState &&
+           (!workflowCompleted || tokenConsumed);
 }
 

@@ -35,20 +35,36 @@ enum class OtaStartResult : uint8_t
     VersionRejected,
     StorageError,
     DownloadUnavailable,
-    ImageRejected
+    ImageRejected,
+    ReleaseMismatch
 };
 
 struct OtaRecord
 {
-    static constexpr uint16_t CURRENT_VERSION = 1;
+    static constexpr uint16_t CURRENT_VERSION = 2;
 
     uint16_t recordVersion = CURRENT_VERSION;
     OtaPersistentState state = OtaPersistentState::Idle;
     std::string releaseId;
     std::string targetVersion;
     std::string failureCode;
+    std::string requestId;
+    uint32_t commandVersion = 0;
 
     bool IsValid() const;
+};
+
+struct RemoteOtaRequest
+{
+    static constexpr uint16_t CONTRACT_VERSION = 1;
+    uint16_t contractVersion = CONTRACT_VERSION;
+    std::string requestId;
+    std::string deviceId;
+    uint32_t commandVersion = 0;
+    std::string releaseId;
+    std::string manifestUrl;
+    std::string expiresAt;
+    std::string authenticationTag;
 };
 
 struct FirmwareManifest

@@ -9,6 +9,7 @@
 #include <string>
 #include "Objects/FullTelemetry.h"
 #include "Objects/ActionResult.h"
+#include "Objects/DeviceInventory.h"
 
 class JsonConverter
 {
@@ -16,7 +17,8 @@ class JsonConverter
         template <typename T>
         static bool Deserialize(const uint8_t* payload, size_t length, T& result);
         JsonDocument LoadDataIntoJson(const FullTelemetry &fullTelemetry);
-        JsonDocument ToJson(const ActionResult& result);
+        JsonDocument ToJson(const ActionResult& result, const std::string &deviceId);
+        JsonDocument InventoryToJson(const DeviceInventory &inventory);
     private:
         static bool Convert(JsonVariantConst json, ActionMessage& result);
 };

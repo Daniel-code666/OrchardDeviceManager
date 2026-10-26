@@ -10,6 +10,7 @@ SHT40Sensor::SHT40Sensor(int id) : Device(id, NO_PIN, "SHT40", ConnectionType::I
 void SHT40Sensor::Init()
 {
     bool isInitialized = sht4.begin();
+    available = isInitialized;
 
     if (!isInitialized)
     {
@@ -29,7 +30,7 @@ SensorReading SHT40Sensor::GetSensorData(int opt)
 
     if (opt == 1)
     {
-        sht4.getEvent(nullptr, &temp);
+        available = sht4.getEvent(nullptr, &temp);
 
         return {
             deviceId,
@@ -41,7 +42,7 @@ SensorReading SHT40Sensor::GetSensorData(int opt)
     }
     else if (opt == 2)
     {
-        sht4.getEvent(&humidity, nullptr);
+        available = sht4.getEvent(&humidity, nullptr);
 
         return {
             deviceId,
@@ -59,7 +60,7 @@ SensorReading SHT40Sensor::GetSensorData(int opt)
 std::array<SensorReading, 2> SHT40Sensor::GetBothReadings()
 {
     sensors_event_t humidity, temp;
-    sht4.getEvent(&humidity, &temp);
+    available = sht4.getEvent(&humidity, &temp);
 
     SensorReading temperatureReading = {
         deviceId,

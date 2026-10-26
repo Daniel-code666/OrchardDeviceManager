@@ -2,7 +2,8 @@
 
 ## Alcance implementado
 
-El firmware `1.6.0` admite dos mensajes JSON por USB/Web Serial:
+El contrato se introdujo en el firmware `1.6.0` y continúa disponible en las
+versiones posteriores. Admite dos mensajes JSON por USB/Web Serial:
 
 - `device_identify`, que devuelve identidad, versión y estado sin datos sensibles;
 - `device_bootstrap`, que recibe una sola vez Wi‑Fi, URL del servicio y token temporal.
@@ -78,7 +79,8 @@ Al volver a **Identificar**:
 
 - `provisioningState` es `provisioned`;
 - `wifiConfigured` es `true`;
-- `mqttConfigured` continúa `false` hasta implementar la fase 10;
+- en `1.6.0`, `mqttConfigured` continúa `false`; desde `1.7.0` el flujo sigue
+  automáticamente con credenciales MQTT según la guía de las fases 10 y 11;
 - no aparecen contraseña Wi‑Fi ni token en las respuestas del ESP.
 
 Es normal que el firmware de desarrollo anuncie después la solicitud manual de

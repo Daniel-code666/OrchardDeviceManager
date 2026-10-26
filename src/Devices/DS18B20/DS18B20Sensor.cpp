@@ -12,6 +12,7 @@ void DS18B20Sensor::Init()
     pinMode(devicePin, INPUT_PULLUP);
 
     temperatureSensor.begin();
+    available = temperatureSensor.getDeviceCount() > 0;
 
     Serial.print("Sensores DS18B20 detectados: ");
     Serial.println(temperatureSensor.getDeviceCount());
@@ -25,8 +26,11 @@ SensorReading DS18B20Sensor::GetSensorData()
 
     if (temperature == DEVICE_DISCONNECTED_C)
     {
+        available = false;
         Serial.println("DS18B20: error de lectura");
     }
+    else
+        available = true;
 
     return {
         deviceId,

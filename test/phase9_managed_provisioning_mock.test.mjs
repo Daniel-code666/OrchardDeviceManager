@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
+import { createDecipheriv } from 'node:crypto';
 import http from 'node:http';
 import test from 'node:test';
 import { buildApprovedResponse, canonicalClaimResponse, createMockHandler, signClaimResponse } from '../tools/phase9_managed_provisioning_mock.mjs';
+import { additionalAuthenticatedData } from '../tools/phase5_credentials_mock.mjs';
 
 const registration = {
   deviceId: 'huerta-c3-a0f262a61a68', requestId: '3b1e7355eabf5a4f0e57bc1d781a2547',
   claimCode: 'SZL5U6WY83LK',
 };
 
-function postJson(port, body, token) {
+function postJson(port, body, token, requestPath = '/api/device-provisioning/claims') {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const request = http.request({ hostname: '127.0.0.1', port,
-      path: '/api/device-provisioning/claims', method: 'POST', headers: {
+      path: requestPath, method: 'POST', headers: {
         'content-type': 'application/json', 'content-length': Buffer.byteLength(payload),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       } }, (response) => {
@@ -41,7 +43,9 @@ test('la firma cambia al alterar el propietario', () => {
 });
 
 test('el endpoint exige token y entrega un claim firmado', async (context) => {
-  const options = { token: 'token-local-pruebas', userId: 'usuario-web', gardenId: 'huerta-web', pendingPolls: 0 };
+  const options = { token: 'token-local-pruebas', userId: 'usuario-web', gardenId: 'huerta-web',
+    pendingPolls: 0, credentialPendingPolls: 0, mqttHost: '192.168.0.13', mqttPort: 1884,
+    mqttUser: 'device-test', mqttPassword: 'secret-test', credentialVersion: 1 };
   const server = http.createServer(createMockHandler(options));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   context.after(() => server.close());
@@ -57,5 +61,27 @@ test('el endpoint exige token y entrega un claim firmado', async (context) => {
   assert.equal(approved.status, 200);
   const response = approved.body;
   assert.equal(response.authenticationTag, signClaimResponse(response, registration.claimCode));
+
+  const keyHex = '10'.repeat(32);
+  const credentialRequest = { type: 'mqtt_credentials_registration', contractVersion: 1,
+    deviceId: registration.deviceId, requestId: 'a'.repeat(32),
+    currentCredentialVersion: 0, bootstrapKey: keyHex };
+  const delivered = await postJson(port, credentialRequest, options.token,
+    '/api/device-provisioning/mqtt-credentials');
+  assert.equal(delivered.status, 200);
+  const envelope = delivered.body;
+  const decipher = createDecipheriv('aes-256-gcm', Buffer.from(keyHex, 'hex'), Buffer.from(envelope.nonce, 'hex'));
+  decipher.setAAD(additionalAuthenticatedData(envelope));
+  decipher.setAuthTag(Buffer.from(envelope.authenticationTag, 'hex'));
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, 'hex')), decipher.final(),
+  ]);
+  const credentials = JSON.parse(plaintext.toString('utf8'));
+  assert.equal(credentials.clientId, body.mqttClientId);
+  assert.equal(credentials.credentialVersion, 1);
+
+  const reused = await postJson(port, { ...credentialRequest, requestId: 'b'.repeat(32) },
+    options.token, '/api/device-provisioning/mqtt-credentials');
+  assert.equal(reused.status, 410);
 });
 

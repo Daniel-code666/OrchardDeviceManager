@@ -5,6 +5,7 @@
 
 #include <HTTPClient.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <string>
 
 class FirmwareUpdateManager
@@ -13,11 +14,16 @@ public:
     explicit FirmwareUpdateManager(ConfigurationManager &configurationManager);
 
     bool Begin(const std::string &currentVersion);
-    OtaStartResult StartUpdate(const std::string &manifestUrl, bool actuatorIsActive);
+    OtaStartResult StartUpdate(const std::string &manifestUrl, bool actuatorIsActive,
+                               const std::string &expectedReleaseId = "",
+                               const std::string &requestId = "",
+                               uint32_t commandVersion = 0);
     void Loop(unsigned long now, bool localSystemHealthy);
 
     OtaRuntimeState GetState() const;
     uint8_t GetProgressPercent() const;
+    const OtaRecord &GetRecord() const;
+    const std::string &GetCurrentVersion() const;
 
 private:
     static constexpr size_t MAX_MANIFEST_BYTES = 4096;
@@ -28,6 +34,7 @@ private:
 
     ConfigurationManager &configurationManager;
     WiFiClient networkClient;
+    WiFiClientSecure secureNetworkClient;
     HTTPClient httpClient;
     OtaRecord record;
     FirmwareManifest activeManifest;

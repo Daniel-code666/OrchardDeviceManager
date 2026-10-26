@@ -64,6 +64,33 @@ bool ManagedProvisioningJson::DeserializeBootstrap(const std::string &json,
     return true;
 }
 
+bool ManagedProvisioningJson::DeserializeWifiRecovery(
+    const std::string &json, ManagedWifiRecoveryRequest &request)
+{
+    JsonDocument document;
+    if (deserializeJson(document, json) != DeserializationError::Ok ||
+        document["type"] != "device_wifi_reconfigure")
+        return false;
+    const JsonObject root = document.as<JsonObject>();
+    const JsonObject wifi = document["wifi"].as<JsonObject>();
+    if (root.size() != 4 || wifi.isNull() || wifi.size() != 2)
+        return false;
+    const char *requestId = document["requestId"];
+    const char *ssid = document["wifi"]["ssid"];
+    const char *password = document["wifi"]["password"];
+    if (requestId == nullptr || ssid == nullptr || password == nullptr)
+        return false;
+    ManagedWifiRecoveryRequest parsed;
+    parsed.contractVersion = document["contractVersion"] | 0;
+    parsed.requestId = requestId;
+    parsed.wifiSsid = ssid;
+    parsed.wifiPassword = password;
+    if (!parsed.IsValid())
+        return false;
+    request = std::move(parsed);
+    return true;
+}
+
 std::string ManagedProvisioningJson::SerializeIdentifyResult(
     const std::string &requestId, const DeviceIdentity &identity,
     const std::string &firmwareVersion, DeviceProvisioningState provisioningState,
@@ -116,6 +143,42 @@ std::string ManagedProvisioningJson::SerializeClaimRegistration(
     document["requestId"] = claim.requestId;
     document["claimCode"] = claim.claimCode;
     document["expiresInSeconds"] = claim.expiresInSeconds;
+    return ToJson(document);
+}
+
+std::string ManagedProvisioningJson::SerializeCredentialRegistration(
+    const MqttCredentialRequest &request, const std::string &bootstrapKeyHex)
+{
+    JsonDocument document;
+    document["type"] = "mqtt_credentials_registration";
+    document["contractVersion"] = 1;
+    document["deviceId"] = request.deviceId;
+    document["requestId"] = request.requestId;
+    document["currentCredentialVersion"] = request.currentCredentialVersion;
+    document["bootstrapKey"] = bootstrapKeyHex;
+    return ToJson(document);
+}
+
+std::string ManagedProvisioningJson::SerializeConfigurationResult(
+    const std::string &requestId, const DeviceIdentity &identity,
+    const std::string &firmwareVersion, bool success,
+    uint32_t credentialVersion, const char *failureCode)
+{
+    JsonDocument document;
+    document["type"] = "device_configuration_result";
+    document["contractVersion"] = 1;
+    document["requestId"] = requestId;
+    document["success"] = success;
+    document["deviceId"] = identity.deviceId;
+    document["firmwareVersion"] = firmwareVersion;
+    document["provisioningState"] = "provisioned";
+    document["wifiConnected"] = true;
+    document["mqttConnected"] = success;
+    document["mqttCredentialVersion"] = credentialVersion;
+    if (failureCode != nullptr && failureCode[0] != '\0')
+        document["failureCode"] = failureCode;
+    else
+        document["failureCode"] = nullptr;
     return ToJson(document);
 }
 

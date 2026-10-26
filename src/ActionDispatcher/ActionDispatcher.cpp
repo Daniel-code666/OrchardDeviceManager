@@ -15,6 +15,7 @@ ActionResult ActionDispatcher::Dispatch(ActionMessage message)
     ActionResult result;
 
     result.requestId = message.requestId;
+    result.command = message.command;
 
     switch(message.command)
     {

@@ -9,3 +9,8 @@ int Device::GetDeviceId()
 {
     return deviceId;
 }
+
+bool Device::IsAvailable() const
+{
+    return available;
+}

@@ -258,7 +258,11 @@ void ProvisioningManager::AnnouncePortalConnectionInfo()
     Serial.println("Modo de configuracion local activo hasta recuperar la conexion Wi-Fi");
     Serial.printf("Red: %s | URL: http://%s | Usuario: %s\n",
                   accessPointName.c_str(), WiFi.softAPIP().toString().c_str(), PORTAL_USER);
+#if !HUERTA_PRODUCTION
     Serial.printf("Clave estable de acceso: %s\n", accessPassword.c_str());
+#else
+    Serial.println("Clave de acceso disponible en la etiqueta o QR del dispositivo");
+#endif
     lastPortalAnnouncementAt = millis();
 }
 

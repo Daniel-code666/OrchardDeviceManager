@@ -15,11 +15,13 @@ class Device
 
         virtual void Init() = 0;
         int GetDeviceId();
+        bool IsAvailable() const;
     protected:
         const int deviceId;
         const uint8_t devicePin;
         const std::string deviceName;
         const ConnectionType connType;
+        bool available = false;
 };
 
 #endif

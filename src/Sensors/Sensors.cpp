@@ -212,6 +212,9 @@ AddedSoilSensorsReadings Sensors::SumSoilReadings()
 // establece el modo de la bomba de agua: 1 manual, 2 automático
 bool Sensors::SetWaterPumpMode(std::vector<WaterPumpSetMode> data)
 {
+    if (data.empty())
+        return false;
+
     bool allPumpsChanged = true;
 
     for (const auto &pumpData : data)
@@ -274,4 +277,36 @@ FullTelemetry Sensors::GetSensorOrActuatorDataById(DeviceIdByType &deviceIdByTyp
     }
 
     return fullTelemetry;
+}
+
+DeviceInventory Sensors::GetInventory(const std::string &deviceId,
+                                      const std::string &firmwareVersion) const
+{
+    DeviceInventory inventory;
+    inventory.deviceId = deviceId;
+    inventory.firmwareVersion = firmwareVersion;
+    inventory.devices = {
+        {1, "DS18B20", DeviceType::Sensor, true, SOIL_TEMP_PIN,
+         ConnectionType::OneWire, true, MeasurementType::SoilTemperature,
+         MeasurementUnits::Celsius, ds18b20Sensor.IsAvailable()},
+        {2, "BH1750", DeviceType::Sensor, false, 0,
+         ConnectionType::I2C, true, MeasurementType::Illuminance,
+         MeasurementUnits::Lux, bh1750Sensor.IsAvailable()},
+        {3, "SHT40", DeviceType::Sensor, false, 0,
+         ConnectionType::I2C, true, MeasurementType::AirTemperature,
+         MeasurementUnits::Celsius, sht40Sensor.IsAvailable()},
+        {3, "SHT40", DeviceType::Sensor, false, 0,
+         ConnectionType::I2C, true, MeasurementType::AirHumidity,
+         MeasurementUnits::Percentage, sht40Sensor.IsAvailable()},
+        {4, "Soil Moisture 1", DeviceType::Sensor, true, SOIL_1_PIN,
+         ConnectionType::Analog, true, MeasurementType::SoilMoisture,
+         MeasurementUnits::Percentage, soilMoistureSensorA.IsAvailable()},
+        {5, "Soil Moisture 2", DeviceType::Sensor, true, SOIL_2_PIN,
+         ConnectionType::Analog, true, MeasurementType::SoilMoisture,
+         MeasurementUnits::Percentage, soilMoistureSensorB.IsAvailable()},
+        {6, "Bomba agua", DeviceType::Actuator, true, PUMP_PIN,
+         ConnectionType::Digital, false, MeasurementType::SoilTemperature,
+         MeasurementUnits::Celsius, waterPump.IsAvailable()},
+    };
+    return inventory;
 }

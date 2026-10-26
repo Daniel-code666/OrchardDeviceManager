@@ -13,6 +13,7 @@
 #include "../Objects/DeviceIdByType.h"
 #include "../Objects/DeviceRegistryEntry.h"
 #include "../Objects/WaterPumpSetMode.h"
+#include "../Objects/DeviceInventory.h"
 
 class Sensors {
     public:
@@ -26,6 +27,8 @@ class Sensors {
         bool SetWaterPumpState(std::vector<WaterPumpSetMode> data);
         bool SetWaterPumpMode(std::vector<WaterPumpSetMode> data);
         bool IsWaterPumpActive();
+        DeviceInventory GetInventory(const std::string &deviceId,
+                                     const std::string &firmwareVersion) const;
         FullTelemetry GetSensorOrActuatorDataById(DeviceIdByType& deviceIdByType);
     private:
         void InitializeWire();

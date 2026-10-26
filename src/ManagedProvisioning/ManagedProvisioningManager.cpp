@@ -2,6 +2,8 @@
 
 #include "ManagedProvisioningJson.h"
 #include "../DeviceProvisioning/ProvisioningJson.h"
+#include "../CredentialProvisioning/CredentialProvisioningJson.h"
+#include "../Security/TrustedRootCa.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -19,6 +21,8 @@ namespace
     constexpr const char *KEY_REQUEST = "request";
     constexpr const char *KEY_BASE_URL = "base_url";
     constexpr const char *KEY_TOKEN = "token";
+    constexpr const char *KEY_TOKEN_CONSUMED = "token_used";
+    constexpr const char *KEY_COMPLETED = "completed";
 
     std::string ReadString(Preferences &preferences, const char *key)
     {
@@ -38,8 +42,10 @@ namespace
 }
 
 ManagedProvisioningManager::ManagedProvisioningManager(ProvisioningManager &provisioning,
-                                                       DeviceProvisioningManager &claims)
-    : wifiManager(provisioning), claimManager(claims), state(ManagedProvisioningState::Idle),
+                                                       DeviceProvisioningManager &claims,
+                                                       MqttCredentialProvisioningManager &credentials)
+    : wifiManager(provisioning), claimManager(claims), credentialManager(credentials),
+      state(ManagedProvisioningState::Idle),
       nextAttemptAt(0), retryDelayMs(FIRST_RETRY_MS), initialized(false)
 {
 }
@@ -59,8 +65,12 @@ bool ManagedProvisioningManager::Begin(const DeviceIdentity &newIdentity,
     if (LoadRecord(loaded))
     {
         persistedRecord = std::move(loaded);
-        state = claimManager.IsProvisioned() ? ManagedProvisioningState::Completed
-                                             : ManagedProvisioningState::WaitingForNetwork;
+        if (persistedRecord.workflowCompleted)
+            state = ManagedProvisioningState::Completed;
+        else if (claimManager.IsProvisioned())
+            state = ManagedProvisioningState::WaitingForCredentialRequest;
+        else
+            state = ManagedProvisioningState::WaitingForNetwork;
     }
     return true;
 }
@@ -84,7 +94,47 @@ bool ManagedProvisioningManager::ProcessSerialMessage(const std::string &input,
         return HandleIdentify(input, response);
     if (type == "device_bootstrap")
         return HandleBootstrap(input, now, response);
+    if (type == "device_wifi_reconfigure")
+        return HandleWifiRecovery(input, now, response);
     return false;
+}
+
+bool ManagedProvisioningManager::HandleWifiRecovery(const std::string &input,
+                                                     unsigned long now,
+                                                     std::string &response)
+{
+    ManagedWifiRecoveryRequest request;
+    if (!initialized || !ManagedProvisioningJson::DeserializeWifiRecovery(input, request))
+    {
+        response = ManagedProvisioningJson::SerializeStatus(
+            "unknown", "wifi_recovery", "failed", "invalid_contract");
+        return true;
+    }
+    if (!claimManager.IsProvisioned())
+    {
+        response = ManagedProvisioningJson::SerializeStatus(
+            request.requestId, "wifi_recovery", "failed", "device_not_provisioned");
+        return true;
+    }
+    if (IsWorkflowActive())
+    {
+        response = ManagedProvisioningJson::SerializeStatus(
+            request.requestId, "wifi_recovery", "failed", "workflow_busy");
+        return true;
+    }
+    pendingBootstrap = ManagedBootstrapRequest{};
+    pendingBootstrap.requestId = request.requestId;
+    if (!wifiManager.StartManagedWifiConfiguration(request.wifiSsid, request.wifiPassword))
+    {
+        response = ManagedProvisioningJson::SerializeStatus(
+            request.requestId, "wifi_recovery", "failed", "wifi_test_not_started");
+        return true;
+    }
+    state = ManagedProvisioningState::TestingWifiRecovery;
+    nextAttemptAt = now;
+    response = ManagedProvisioningJson::SerializeStatus(
+        request.requestId, "wifi_recovery", "in_progress");
+    return true;
 }
 
 bool ManagedProvisioningManager::HandleIdentify(const std::string &input,
@@ -151,15 +201,38 @@ void ManagedProvisioningManager::Loop(unsigned long now)
     if (!initialized)
         return;
 
-    if (state == ManagedProvisioningState::TestingWifi)
+    if (state == ManagedProvisioningState::TestingWifi ||
+        state == ManagedProvisioningState::TestingWifiRecovery)
     {
+        const bool recoveryOnly = state == ManagedProvisioningState::TestingWifiRecovery;
         bool success = false;
         std::string detail;
         if (!wifiManager.TryTakeCredentialTestResult(success, detail))
             return;
         if (!success)
         {
+            if (recoveryOnly)
+            {
+                Emit(ManagedProvisioningJson::SerializeStatus(
+                    pendingBootstrap.requestId, "wifi_recovery", "failed", detail.c_str()));
+                pendingBootstrap = ManagedBootstrapRequest{};
+                state = persistedRecord.workflowCompleted
+                            ? ManagedProvisioningState::Completed
+                            : ManagedProvisioningState::Idle;
+                return;
+            }
             Fail("wifi", detail.c_str());
+            return;
+        }
+
+        if (recoveryOnly)
+        {
+            Emit(ManagedProvisioningJson::SerializeStatus(
+                pendingBootstrap.requestId, "wifi_recovery", "completed"));
+            pendingBootstrap = ManagedBootstrapRequest{};
+            state = persistedRecord.workflowCompleted
+                        ? ManagedProvisioningState::Completed
+                        : ManagedProvisioningState::Idle;
             return;
         }
 
@@ -167,6 +240,8 @@ void ManagedProvisioningManager::Loop(unsigned long now)
         record.bootstrapRequestId = pendingBootstrap.requestId;
         record.serviceBaseUrl = pendingBootstrap.serviceBaseUrl;
         record.provisioningToken = pendingBootstrap.provisioningToken;
+        record.tokenConsumed = false;
+        record.workflowCompleted = false;
         if (!SaveRecord(record))
         {
             Fail("bootstrap", "storage_error");
@@ -187,6 +262,12 @@ void ManagedProvisioningManager::Loop(unsigned long now)
         RegisterClaim(now);
     else if (state == ManagedProvisioningState::PollingClaim && HasElapsed(now, nextAttemptAt))
         PollClaim(now);
+    else if (state == ManagedProvisioningState::WaitingForCredentialRequest)
+        ContinueAfterClaim(now);
+    else if (state == ManagedProvisioningState::RequestingCredentials && HasElapsed(now, nextAttemptAt))
+        RequestCredentials(now);
+    else if (state == ManagedProvisioningState::PollingCredentials && HasElapsed(now, nextAttemptAt))
+        PollCredentials(now);
 }
 
 void ManagedProvisioningManager::ContinueAfterWifi(unsigned long now)
@@ -195,7 +276,7 @@ void ManagedProvisioningManager::ContinueAfterWifi(unsigned long now)
         return;
     if (claimManager.IsProvisioned())
     {
-        Complete();
+        CompleteClaim(now);
         return;
     }
     if (claimManager.GetState() == DeviceProvisioningState::Unprovisioned &&
@@ -217,7 +298,7 @@ void ManagedProvisioningManager::RegisterClaim(unsigned long now)
     if (!claimManager.TryGetPendingRequest(claim))
     {
         if (claimManager.IsProvisioned())
-            Complete();
+            CompleteClaim(now);
         else
             Fail("claim", "claim_expired");
         return;
@@ -266,7 +347,7 @@ void ManagedProvisioningManager::PollClaim(unsigned long now)
     if (!claimManager.TryGetPendingRequest(claim))
     {
         if (claimManager.IsProvisioned())
-            Complete();
+            CompleteClaim(now);
         else
             Fail("claim", "claim_expired");
         return;
@@ -308,6 +389,145 @@ void ManagedProvisioningManager::PollClaim(unsigned long now)
     nextAttemptAt = now + retryDelayMs;
 }
 
+void ManagedProvisioningManager::ContinueAfterClaim(unsigned long now)
+{
+    if (WiFi.status() != WL_CONNECTED || !claimManager.IsProvisioned())
+        return;
+
+    MqttCredentialRequest request;
+    std::string bootstrapKey;
+    if (!credentialManager.TryGetPendingRequest(request))
+    {
+        if (credentialManager.GetAppliedCredentialVersion() > 0 &&
+            activeConfiguration.HasMqttConfiguration())
+        {
+            state = ManagedProvisioningState::TestingMqtt;
+            Emit(ManagedProvisioningJson::SerializeStatus(
+                persistedRecord.bootstrapRequestId, "mqtt", "in_progress"));
+        }
+        return;
+    }
+    if (!credentialManager.TryGetLocalBootstrapKey(bootstrapKey))
+        return;
+
+    state = ManagedProvisioningState::RequestingCredentials;
+    retryDelayMs = FIRST_RETRY_MS;
+    nextAttemptAt = now;
+    Emit(ManagedProvisioningJson::SerializeStatus(
+        persistedRecord.bootstrapRequestId, "mqtt_credentials", "in_progress"));
+}
+
+void ManagedProvisioningManager::RequestCredentials(unsigned long now)
+{
+    MqttCredentialRequest request;
+    std::string bootstrapKey;
+    if (!credentialManager.TryGetPendingRequest(request) ||
+        !credentialManager.TryGetLocalBootstrapKey(bootstrapKey))
+    {
+        Fail("mqtt_credentials", "credential_request_unavailable");
+        return;
+    }
+
+    int statusCode = 0;
+    std::string responseBody;
+    std::string errorCode;
+    const std::string url = persistedRecord.serviceBaseUrl +
+                            "/api/device-provisioning/mqtt-credentials";
+    const std::string body = ManagedProvisioningJson::SerializeCredentialRegistration(
+        request, bootstrapKey);
+    // La clave solo vive en esta solicitud al servicio. Nunca se emite como evento serie.
+    bootstrapKey.assign(bootstrapKey.size(), '0');
+    bootstrapKey.clear();
+
+    if (!SendHttpRequest("POST", url, body, statusCode, responseBody, errorCode))
+    {
+        ScheduleRetry(now, "mqtt_credentials", errorCode.c_str());
+        return;
+    }
+    if (statusCode == 401 || statusCode == 403 || statusCode == 410)
+    {
+        Fail("mqtt_credentials", "invalid_provisioning_token");
+        return;
+    }
+    if (statusCode == 200)
+    {
+        const CredentialEnvelopeResult result = ProcessCredentialResponse(responseBody);
+        if (result != CredentialEnvelopeResult::Accepted)
+            Fail("mqtt_credentials", ToString(result));
+        return;
+    }
+    if (statusCode == 202)
+    {
+        state = ManagedProvisioningState::PollingCredentials;
+        retryDelayMs = FIRST_RETRY_MS;
+        nextAttemptAt = now + retryDelayMs;
+        return;
+    }
+    if (statusCode >= 400 && statusCode < 500 && statusCode != 429)
+    {
+        Fail("mqtt_credentials", "service_rejected_request");
+        return;
+    }
+    ScheduleRetry(now, "mqtt_credentials", "service_unavailable");
+}
+
+void ManagedProvisioningManager::PollCredentials(unsigned long now)
+{
+    MqttCredentialRequest request;
+    if (!credentialManager.TryGetPendingRequest(request))
+    {
+        Fail("mqtt_credentials", "credential_request_unavailable");
+        return;
+    }
+
+    int statusCode = 0;
+    std::string body;
+    std::string errorCode;
+    const std::string url = persistedRecord.serviceBaseUrl +
+                            "/api/device-provisioning/mqtt-credentials/" + request.requestId;
+    if (!SendHttpRequest("GET", url, "", statusCode, body, errorCode))
+    {
+        ScheduleRetry(now, "mqtt_credentials", errorCode.c_str());
+        return;
+    }
+    if (statusCode == 200)
+    {
+        const CredentialEnvelopeResult result = ProcessCredentialResponse(body);
+        if (result != CredentialEnvelopeResult::Accepted)
+            Fail("mqtt_credentials", ToString(result));
+        return;
+    }
+    if (statusCode == 401 || statusCode == 403 || statusCode == 410)
+    {
+        Fail("mqtt_credentials", "invalid_provisioning_token");
+        return;
+    }
+    if (statusCode >= 400 && statusCode < 500 && statusCode != 404 && statusCode != 429)
+    {
+        Fail("mqtt_credentials", "service_rejected_request");
+        return;
+    }
+    retryDelayMs = retryDelayMs >= MAX_RETRY_MS / 2 ? MAX_RETRY_MS : retryDelayMs * 2;
+    nextAttemptAt = now + retryDelayMs;
+}
+
+CredentialEnvelopeResult ManagedProvisioningManager::ProcessCredentialResponse(
+    const std::string &body)
+{
+    EncryptedMqttCredentials envelope;
+    if (!CredentialProvisioningJson::DeserializeEnvelope(body, envelope))
+        return CredentialEnvelopeResult::InvalidContract;
+
+    const CredentialEnvelopeResult result = credentialManager.ProcessEnvelope(envelope);
+    if (result != CredentialEnvelopeResult::Accepted)
+        return result;
+
+    state = ManagedProvisioningState::TestingMqtt;
+    Emit(ManagedProvisioningJson::SerializeStatus(
+        persistedRecord.bootstrapRequestId, "mqtt", "in_progress"));
+    return CredentialEnvelopeResult::Accepted;
+}
+
 bool ManagedProvisioningManager::SendHttpRequest(const char *method,
                                                  const std::string &url,
                                                  const std::string &body,
@@ -326,12 +546,19 @@ bool ManagedProvisioningManager::SendHttpRequest(const char *method,
     if (url.rfind("https://", 0) == 0)
     {
 #if ENABLE_LOCAL_PROVISIONING_MOCK
-        // Exclusivo del mock local. La fase de endurecimiento instalará la CA de producción.
-        secureClient.setInsecure();
+        if (HUERTA_TRUSTED_ROOT_CA[0] == '\0')
+            secureClient.setInsecure();
+        else
+            secureClient.setCACert(HUERTA_TRUSTED_ROOT_CA);
         begun = http.begin(secureClient, url.c_str());
 #else
-        errorCode = "tls_ca_not_configured";
-        return false;
+        if (HUERTA_TRUSTED_ROOT_CA[0] == '\0')
+        {
+            errorCode = "tls_ca_not_configured";
+            return false;
+        }
+        secureClient.setCACert(HUERTA_TRUSTED_ROOT_CA);
+        begun = http.begin(secureClient, url.c_str());
 #endif
     }
     else
@@ -392,7 +619,7 @@ bool ManagedProvisioningManager::ProcessClaimResponse(const std::string &body,
     const ClaimProcessingResult result = claimManager.ProcessResponse(response, now);
     if (result == ClaimProcessingResult::Approved)
     {
-        Complete();
+        CompleteClaim(now);
         return true;
     }
     if (result == ClaimProcessingResult::Rejected || result == ClaimProcessingResult::Expired)
@@ -412,21 +639,79 @@ void ManagedProvisioningManager::ScheduleRetry(unsigned long now, const char *st
     nextAttemptAt = now + retryDelayMs;
 }
 
-void ManagedProvisioningManager::Complete()
+void ManagedProvisioningManager::CompleteClaim(unsigned long now)
 {
-    state = ManagedProvisioningState::Completed;
+    state = ManagedProvisioningState::WaitingForCredentialRequest;
+    nextAttemptAt = now;
     Emit(ManagedProvisioningJson::SerializeStatus(
         persistedRecord.bootstrapRequestId, "claim", "completed"));
 }
 
-void ManagedProvisioningManager::Fail(const char *stage, const char *errorCode)
+void ManagedProvisioningManager::NotifyMqttCredentialResult(bool success,
+                                                             uint32_t credentialVersion,
+                                                             const char *failureCode)
+{
+    if (state != ManagedProvisioningState::TestingMqtt)
+        return;
+    if (success)
+    {
+        CompleteWorkflow(credentialVersion);
+        return;
+    }
+
+    state = ManagedProvisioningState::Failed;
+    ConsumeToken(false);
+    Emit(ManagedProvisioningJson::SerializeStatus(
+        persistedRecord.bootstrapRequestId, "mqtt", "failed", failureCode));
+    Emit(ManagedProvisioningJson::SerializeConfigurationResult(
+        persistedRecord.bootstrapRequestId, identity, firmwareVersion, false,
+        credentialManager.GetAppliedCredentialVersion(), failureCode));
+}
+
+void ManagedProvisioningManager::CompleteWorkflow(uint32_t credentialVersion)
+{
+    if (!ConsumeToken(true))
+    {
+        Fail("bootstrap", "token_cleanup_failed", false);
+        return;
+    }
+    state = ManagedProvisioningState::Completed;
+    Emit(ManagedProvisioningJson::SerializeStatus(
+        persistedRecord.bootstrapRequestId, "mqtt", "completed"));
+    Emit(ManagedProvisioningJson::SerializeConfigurationResult(
+        persistedRecord.bootstrapRequestId, identity, firmwareVersion, true,
+        credentialVersion));
+}
+
+void ManagedProvisioningManager::Fail(const char *stage, const char *errorCode, bool definitive)
 {
     state = ManagedProvisioningState::Failed;
     const std::string &requestId = pendingBootstrap.requestId.empty()
                                        ? persistedRecord.bootstrapRequestId
                                        : pendingBootstrap.requestId;
     Emit(ManagedProvisioningJson::SerializeStatus(requestId, stage, "failed", errorCode));
+    if (definitive && !persistedRecord.bootstrapRequestId.empty())
+        ConsumeToken(false);
+    if (claimManager.IsProvisioned())
+        Emit(ManagedProvisioningJson::SerializeConfigurationResult(
+            requestId, identity, firmwareVersion, false,
+            credentialManager.GetAppliedCredentialVersion(), errorCode));
     pendingBootstrap = ManagedBootstrapRequest{};
+}
+
+bool ManagedProvisioningManager::ConsumeToken(bool completed)
+{
+    if (persistedRecord.bootstrapRequestId.empty())
+        return false;
+    ManagedProvisioningRecord candidate = persistedRecord;
+    candidate.provisioningToken.assign(candidate.provisioningToken.size(), '0');
+    candidate.provisioningToken.clear();
+    candidate.tokenConsumed = true;
+    candidate.workflowCompleted = completed;
+    if (!SaveRecord(candidate))
+        return false;
+    persistedRecord = std::move(candidate);
+    return true;
 }
 
 void ManagedProvisioningManager::Emit(const std::string &event)
@@ -452,9 +737,14 @@ void ManagedProvisioningManager::UpdateConfiguration(const DeviceConfiguration &
 bool ManagedProvisioningManager::IsWorkflowActive() const
 {
     return state == ManagedProvisioningState::TestingWifi ||
+           state == ManagedProvisioningState::TestingWifiRecovery ||
            state == ManagedProvisioningState::WaitingForNetwork ||
            state == ManagedProvisioningState::RegisteringClaim ||
-           state == ManagedProvisioningState::PollingClaim;
+           state == ManagedProvisioningState::PollingClaim ||
+           state == ManagedProvisioningState::WaitingForCredentialRequest ||
+           state == ManagedProvisioningState::RequestingCredentials ||
+           state == ManagedProvisioningState::PollingCredentials ||
+           state == ManagedProvisioningState::TestingMqtt;
 }
 
 bool ManagedProvisioningManager::LoadRecord(ManagedProvisioningRecord &record) const
@@ -473,7 +763,11 @@ bool ManagedProvisioningManager::LoadRecord(ManagedProvisioningRecord &record) c
     loaded.bootstrapRequestId = ReadString(preferences, KEY_REQUEST);
     loaded.serviceBaseUrl = ReadString(preferences, KEY_BASE_URL);
     loaded.provisioningToken = ReadString(preferences, KEY_TOKEN);
+    loaded.tokenConsumed = preferences.getBool(KEY_TOKEN_CONSUMED, false);
+    loaded.workflowCompleted = preferences.getBool(KEY_COMPLETED, false);
     preferences.end();
+    if (loaded.version == 1)
+        loaded.version = ManagedProvisioningRecord::CURRENT_VERSION;
     if (!loaded.IsValid())
         return false;
     record = std::move(loaded);
@@ -491,7 +785,15 @@ bool ManagedProvisioningManager::SaveRecord(const ManagedProvisioningRecord &rec
     success = preferences.putUShort(KEY_VERSION, record.version) > 0 && success;
     success = WriteString(preferences, KEY_REQUEST, record.bootstrapRequestId) && success;
     success = WriteString(preferences, KEY_BASE_URL, record.serviceBaseUrl) && success;
-    success = WriteString(preferences, KEY_TOKEN, record.provisioningToken) && success;
+    if (record.provisioningToken.empty())
+    {
+        if (preferences.isKey(KEY_TOKEN))
+            success = preferences.remove(KEY_TOKEN) && success;
+    }
+    else
+        success = WriteString(preferences, KEY_TOKEN, record.provisioningToken) && success;
+    success = preferences.putBool(KEY_TOKEN_CONSUMED, record.tokenConsumed) > 0 && success;
+    success = preferences.putBool(KEY_COMPLETED, record.workflowCompleted) > 0 && success;
     if (success)
         success = preferences.putBool(KEY_COMMITTED, true) > 0;
     preferences.end();
@@ -502,6 +804,8 @@ bool ManagedProvisioningManager::SaveRecord(const ManagedProvisioningRecord &rec
     return LoadRecord(persisted) &&
            persisted.bootstrapRequestId == record.bootstrapRequestId &&
            persisted.serviceBaseUrl == record.serviceBaseUrl &&
-           persisted.provisioningToken == record.provisioningToken;
+           persisted.provisioningToken == record.provisioningToken &&
+           persisted.tokenConsumed == record.tokenConsumed &&
+           persisted.workflowCompleted == record.workflowCompleted;
 }
 

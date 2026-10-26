@@ -138,6 +138,7 @@ std::vector<WaterPumpSetMode> EnumsSwitch::SetDataForWaterPumpControlModeAction(
 
         data.actuatorId = param.deviceId;
         data.option = param.value;
+        data.state = param.state;
 
         result.push_back(data);
     }

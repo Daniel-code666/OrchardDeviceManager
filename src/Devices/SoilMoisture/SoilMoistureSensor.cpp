@@ -11,7 +11,8 @@ SoilMoistureSensor::SoilMoistureSensor(int id, uint8_t pin, std::string instance
 // incializa el sensor
 void SoilMoistureSensor::Init()
 {
-    // actualmente no es necesario inicializar nada a parte de establecer parámetros para el ambiente seco o húmedo que pueden ser costantes en la clase
+    // Un canal analógico no permite detectar eléctricamente si la sonda está conectada.
+    available = true;
 }
 
 // devuelve los valores captados por el sensor

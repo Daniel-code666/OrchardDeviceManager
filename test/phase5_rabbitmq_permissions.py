@@ -35,7 +35,10 @@ def assert_allowed_topics():
     def on_connect(current, _userdata, _flags, reason_code, _properties):
         if reason_code == 0:
             connected.set()
-            current.subscribe(topic(DEVICE_ID, "actions"), qos=0)
+            current.subscribe([
+                (topic(DEVICE_ID, "actions"), 0),
+                (topic(DEVICE_ID, "control"), 0),
+            ])
 
     def on_subscribe(_client, _userdata, _mid, reason_codes, _properties):
         if reason_codes and not reason_codes[0].is_failure:
@@ -54,6 +57,8 @@ def assert_allowed_topics():
         assert subscribed.wait(5), "No pudo suscribirse a su topic actions"
         client.publish(topic(DEVICE_ID, "telemetry"), b'{"phase":5}', qos=1).wait_for_publish(5)
         client.publish(topic(DEVICE_ID, "actions-response"), b'{"ok":true}', qos=1).wait_for_publish(5)
+        client.publish(topic(DEVICE_ID, "inventory"), b'{"type":"device_inventory"}', qos=1).wait_for_publish(5)
+        client.publish(topic(DEVICE_ID, "control-status"), b'{"status":"test"}', qos=1).wait_for_publish(5)
         time.sleep(0.5)
         assert not disconnected.is_set(), "RabbitMQ rechazo un topic permitido"
     finally:

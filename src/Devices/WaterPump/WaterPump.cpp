@@ -18,6 +18,7 @@ void WaterPump::Init()
 {
     digitalWrite(devicePin, LOW);
     pinMode(devicePin, OUTPUT);
+    available = true;
 }
 
 // devuelve el estado funcional de la bomba en términos de true/false 

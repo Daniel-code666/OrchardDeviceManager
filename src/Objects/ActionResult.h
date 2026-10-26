@@ -3,10 +3,12 @@
 
 #include "Objects/FullTelemetry.h"
 #include <string>
+#include "Commands.h"
 
 struct ActionResult
 {
     std::string requestId;
+    Commands command = Commands::GetSensorOrActuatorDataById;
     bool success = false;
     FullTelemetry telemetry;
 };

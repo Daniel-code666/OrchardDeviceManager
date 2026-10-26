@@ -9,6 +9,9 @@ bool DeviceTopics::TryCreate(const std::string &deviceId, DeviceTopics &topics)
     topics.telemetry = prefix + "telemetry";
     topics.actions = prefix + "actions";
     topics.actionsResponse = prefix + "actions-response";
+    topics.inventory = prefix + "inventory";
+    topics.control = prefix + "control";
+    topics.controlStatus = prefix + "control-status";
     return true;
 }
 

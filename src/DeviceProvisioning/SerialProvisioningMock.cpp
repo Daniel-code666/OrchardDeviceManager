@@ -4,12 +4,14 @@
 #include "../CredentialProvisioning/CredentialProvisioningJson.h"
 #include "../Recovery/RecoveryJson.h"
 #include "../Ota/OtaControlJson.h"
+#include "../Utils/JsonConverter.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
 namespace
 {
+#if ENABLE_LOCAL_PROVISIONING_MOCK
     bool TryParseWifiOutageDuration(const std::string &input, uint32_t &durationSeconds)
     {
         constexpr const char *PREFIX = "WIFI_OUTAGE ";
@@ -37,6 +39,7 @@ namespace
         durationSeconds = parsed;
         return true;
     }
+#endif
 }
 
 SerialProvisioningMock::SerialProvisioningMock(
@@ -57,6 +60,7 @@ SerialProvisioningMock::SerialProvisioningMock(
 
 void SerialProvisioningMock::AnnouncePendingCredentialRequest() const
 {
+#if ENABLE_LOCAL_PROVISIONING_MOCK
     MqttCredentialRequest request;
     std::string key;
     if (!credentialManager.TryGetPendingRequest(request) ||
@@ -69,10 +73,12 @@ void SerialProvisioningMock::AnnouncePendingCredentialRequest() const
     Serial.println("MQTT_CREDENTIALS_REQUEST_BEGIN");
     Serial.println(CredentialProvisioningJson::Serialize(request).c_str());
     Serial.println("MQTT_CREDENTIALS_REQUEST_END");
+#endif
 }
 
 void SerialProvisioningMock::AnnouncePendingRequest() const
 {
+#if ENABLE_LOCAL_PROVISIONING_MOCK
     ClaimRequest request;
     if (!manager.TryGetPendingRequest(request))
         return;
@@ -80,6 +86,7 @@ void SerialProvisioningMock::AnnouncePendingRequest() const
     Serial.println("PROVISIONING_REQUEST_BEGIN");
     Serial.println(ProvisioningJson::Serialize(request).c_str());
     Serial.println("PROVISIONING_REQUEST_END");
+#endif
 }
 
 void SerialProvisioningMock::SetDeviceInfo(const std::string &newDeviceId,
@@ -153,6 +160,18 @@ void SerialProvisioningMock::ProcessLine(unsigned long now)
         serializeJson(document, Serial);
         Serial.println();
         Serial.println("DEVICE_INFO_END");
+        return;
+    }
+
+    if (inputBuffer == "DEVICE_INVENTORY")
+    {
+        JsonConverter converter;
+        JsonDocument inventoryDocument = converter.InventoryToJson(
+            sensors.GetInventory(deviceId, firmwareVersion));
+        Serial.println("DEVICE_INVENTORY_BEGIN");
+        serializeJson(inventoryDocument, Serial);
+        Serial.println();
+        Serial.println("DEVICE_INVENTORY_END");
         return;
     }
 

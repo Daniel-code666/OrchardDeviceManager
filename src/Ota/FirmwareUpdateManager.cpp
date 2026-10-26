@@ -4,6 +4,7 @@
 #include "OtaManifestJson.h"
 #include "../Constants/FirmwareVersion.h"
 #include "../DeviceProvisioning/ProvisioningTypes.h"
+#include "../Security/TrustedRootCa.h"
 
 #include <Arduino.h>
 #include <Update.h>
@@ -107,7 +108,10 @@ bool FirmwareUpdateManager::Begin(const std::string &runningVersion)
 }
 
 OtaStartResult FirmwareUpdateManager::StartUpdate(const std::string &manifestUrl,
-                                                   bool actuatorIsActive)
+                                                   bool actuatorIsActive,
+                                                   const std::string &expectedReleaseId,
+                                                   const std::string &requestId,
+                                                   uint32_t commandVersion)
 {
     if (runtimeState == OtaRuntimeState::Downloading ||
         runtimeState == OtaRuntimeState::PendingValidation ||
@@ -125,11 +129,15 @@ OtaStartResult FirmwareUpdateManager::StartUpdate(const std::string &manifestUrl
     if (!LoadManifest(manifestUrl, manifest, failure) ||
         !ValidateManifest(manifest, failure))
         return failure;
+    if (!expectedReleaseId.empty() && manifest.releaseId != expectedReleaseId)
+        return OtaStartResult::ReleaseMismatch;
 
     OtaRecord downloading;
     downloading.state = OtaPersistentState::Downloading;
     downloading.releaseId = manifest.releaseId;
     downloading.targetVersion = manifest.version;
+    downloading.requestId = requestId;
+    downloading.commandVersion = commandVersion;
     if (!SaveRecord(downloading))
         return OtaStartResult::StorageError;
 
@@ -171,15 +179,46 @@ uint8_t FirmwareUpdateManager::GetProgressPercent() const
     return static_cast<uint8_t>(percentage > 100 ? 100 : percentage);
 }
 
+const OtaRecord &FirmwareUpdateManager::GetRecord() const
+{
+    return record;
+}
+
+const std::string &FirmwareUpdateManager::GetCurrentVersion() const
+{
+    return currentVersion;
+}
+
 bool FirmwareUpdateManager::LoadManifest(const std::string &url, FirmwareManifest &manifest,
                                          OtaStartResult &failure)
 {
     WiFiClient manifestNetworkClient;
+    WiFiClientSecure secureManifestNetworkClient;
     // HTTPClient conserva una referencia al transporte; debe destruirse primero.
     HTTPClient manifestClient;
     manifestClient.setConnectTimeout(5000);
     manifestClient.setTimeout(5000);
-    if (!manifestClient.begin(manifestNetworkClient, url.c_str()))
+    bool begun = false;
+    if (url.rfind("https://", 0) == 0)
+    {
+#if ENABLE_LOCAL_OTA_MOCK
+        if (HUERTA_TRUSTED_ROOT_CA[0] == '\0')
+            secureManifestNetworkClient.setInsecure();
+        else
+            secureManifestNetworkClient.setCACert(HUERTA_TRUSTED_ROOT_CA);
+#else
+        if (HUERTA_TRUSTED_ROOT_CA[0] == '\0')
+        {
+            failure = OtaStartResult::InvalidUrl;
+            return false;
+        }
+        secureManifestNetworkClient.setCACert(HUERTA_TRUSTED_ROOT_CA);
+#endif
+        begun = manifestClient.begin(secureManifestNetworkClient, url.c_str());
+    }
+    else
+        begun = manifestClient.begin(manifestNetworkClient, url.c_str());
+    if (!begun)
     {
         failure = OtaStartResult::ManifestUnavailable;
         return false;
@@ -240,7 +279,24 @@ bool FirmwareUpdateManager::BeginImageDownload(const FirmwareManifest &manifest)
     httpClient.end();
     httpClient.setConnectTimeout(5000);
     httpClient.setTimeout(3000);
-    if (!httpClient.begin(networkClient, manifest.firmwareUrl.c_str()))
+    bool begun = false;
+    if (manifest.firmwareUrl.rfind("https://", 0) == 0)
+    {
+#if ENABLE_LOCAL_OTA_MOCK
+        if (HUERTA_TRUSTED_ROOT_CA[0] == '\0')
+            secureNetworkClient.setInsecure();
+        else
+            secureNetworkClient.setCACert(HUERTA_TRUSTED_ROOT_CA);
+#else
+        if (HUERTA_TRUSTED_ROOT_CA[0] == '\0')
+            return false;
+        secureNetworkClient.setCACert(HUERTA_TRUSTED_ROOT_CA);
+#endif
+        begun = httpClient.begin(secureNetworkClient, manifest.firmwareUrl.c_str());
+    }
+    else
+        begun = httpClient.begin(networkClient, manifest.firmwareUrl.c_str());
+    if (!begun)
         return false;
     const int status = httpClient.GET();
     if (status != HTTP_CODE_OK || httpClient.getSize() != static_cast<int>(manifest.size))
@@ -374,9 +430,11 @@ void FirmwareUpdateManager::ValidateRunningImage(unsigned long now, bool localSy
 bool FirmwareUpdateManager::IsAllowedUrl(const std::string &url)
 {
 #if ENABLE_LOCAL_OTA_MOCK
-    return url.size() <= 512 && url.rfind("http://", 0) == 0;
+    return url.size() <= 512 &&
+           (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0);
 #else
-    return false;
+    return url.size() <= 512 && url.rfind("https://", 0) == 0 &&
+           HUERTA_TRUSTED_ROOT_CA[0] != '\0';
 #endif
 }
 

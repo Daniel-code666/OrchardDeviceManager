@@ -9,29 +9,38 @@
     label{display:block;margin:.8rem 0}input,button{font:inherit;box-sizing:border-box;padding:.65rem;border-radius:7px;border:1px solid #91a89a}
     input{width:100%}button{cursor:pointer;background:#17663d;color:white;border:0;margin-right:.5rem}
     pre{white-space:pre-wrap;max-height:18rem;overflow:auto;background:#10251a;color:#d8f5e3;padding:1rem;border-radius:8px}
-    .state{font-weight:700}.hint{color:#52695b;font-size:.9rem}
+    .state{font-weight:700}.hint{color:#52695b;font-size:.9rem}.hidden{display:none}
   </style>
 </head>
 <body>
   <h1>Configurar dispositivo Huerta</h1>
-  <p class="hint">Herramienta local de las fases 8 y 9. Requiere Chrome o Edge y una conexión USB.</p>
+  <p class="hint">Herramienta local de las fases 8 a 13. Requiere Chrome o Edge y una conexión USB.</p>
   <section><button id="connect">Conectar dispositivo</button><button id="identify" disabled>Identificar</button>
     <span id="state" class="state">Sin conexión</span></section>
   <section><form id="bootstrap">
     <label>Red Wi‑Fi<input id="ssid" maxlength="32" required autocomplete="off"></label>
     <label>Contraseña Wi‑Fi<input id="password" type="password" maxlength="64" autocomplete="new-password"></label>
-    <label>URL del servicio accesible por el ESP<input id="baseUrl" placeholder="http://192.168.0.10:8090" required></label>
-    <label>Token de aprovisionamiento<input id="token" type="password" minlength="16" required autocomplete="off"></label>
+    <div id="bootstrap-only">
+      <label>URL del servicio accesible por el ESP<input id="baseUrl" placeholder="http://192.168.0.10:8090" required></label>
+      <label>Token de aprovisionamiento<input id="token" type="password" minlength="16" required autocomplete="off"></label>
+    </div>
     <button id="send" disabled>Configurar</button>
   </form></section>
   <section><h2>Eventos del dispositivo</h2><pre id="log"></pre></section>
 <script>
-let port, reader, writer, buffer = '';
+let port, reader, writer, buffer = '', provisioned = false;
 const log = document.querySelector('#log');
 const state = document.querySelector('#state');
 const requestId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 32);
 function append(value){ log.textContent += `${value}\n`; log.scrollTop = log.scrollHeight; }
 async function send(message){ await writer.write(new TextEncoder().encode(`${JSON.stringify(message)}\n`)); }
+function setProvisioningMode(value){
+  provisioned=value;
+  document.querySelector('#bootstrap-only').classList.toggle('hidden',value);
+  document.querySelector('#baseUrl').required=!value;
+  document.querySelector('#token').required=!value;
+  document.querySelector('#send').textContent=value?'Actualizar Wi-Fi':'Configurar';
+}
 async function readLoop(){
   const decoder = new TextDecoder();
   while (port?.readable) {
@@ -40,7 +49,10 @@ async function readLoop(){
       const lines=buffer.split(/\r?\n/); buffer=lines.pop(); for(const line of lines){
         if(!line.trim().startsWith('{')) continue;
         try { const event=JSON.parse(line); append(JSON.stringify(event,null,2));
-          if(event.type==='device_identify_result') state.textContent=`${event.deviceId} · ${event.provisioningState}`;
+          if(event.type==='device_identify_result'){
+            setProvisioningMode(event.provisioningState==='provisioned');
+            state.textContent=`${event.deviceId} · ${event.provisioningState}`;
+          }
           if(event.type==='device_configuration_status') state.textContent=`${event.stage}: ${event.status}${event.errorCode?' · '+event.errorCode:''}`;
         } catch {}
       }}
@@ -57,10 +69,15 @@ document.querySelector('#connect').onclick=async()=>{
 document.querySelector('#identify').onclick=()=>send({type:'device_identify',contractVersion:1,requestId:requestId()});
 document.querySelector('#bootstrap').onsubmit=async(event)=>{
   event.preventDefault();
-  await send({type:'device_bootstrap',contractVersion:1,requestId:requestId(),
-    wifi:{ssid:document.querySelector('#ssid').value,password:document.querySelector('#password').value},
-    service:{baseUrl:document.querySelector('#baseUrl').value},provisioningToken:document.querySelector('#token').value});
-  state.textContent='Bootstrap enviado; probando Wi‑Fi';
+  const wifi={ssid:document.querySelector('#ssid').value,password:document.querySelector('#password').value};
+  if(provisioned){
+    await send({type:'device_wifi_reconfigure',contractVersion:1,requestId:requestId(),wifi});
+    state.textContent='Nueva red enviada; probando Wi-Fi';
+  }else{
+    await send({type:'device_bootstrap',contractVersion:1,requestId:requestId(),wifi,
+      service:{baseUrl:document.querySelector('#baseUrl').value},provisioningToken:document.querySelector('#token').value});
+    state.textContent='Bootstrap enviado; probando Wi‑Fi';
+  }
 };
 </script></body></html>
 

@@ -8,7 +8,9 @@ namespace
 }
 
 // constructor
-MqttCommunication::MqttCommunication() : wifiClient(), mqttClient(wifiClient), configuration(), initialized(false) {}
+MqttCommunication::MqttCommunication()
+    : wifiClient(), mqttClient(wifiClient), configuration(), initialized(false),
+      inventoryAvailable(false), inventoryPending(false) {}
 
 // Inicializa MQTT. El ciclo Wi-Fi pertenece a ProvisioningManager.
 bool MqttCommunication::Init(const DeviceConfiguration &newConfiguration)
@@ -35,7 +37,7 @@ bool MqttCommunication::Init(const DeviceConfiguration &newConfiguration)
         });
 
     // establece el tamaño del buffer
-    mqttClient.setBufferSize(2048);
+    mqttClient.setBufferSize(4096);
 
     initialized = true;
 
@@ -47,14 +49,31 @@ void MqttCommunication::Stop()
 {
     mqttClient.disconnect();
     pendingAction.reset();
+    pendingControlMessage.reset();
     configuration = DeviceConfiguration{};
     topics = DeviceTopics{};
     initialized = false;
+    inventoryPending = inventoryAvailable;
 }
 
 void MqttCommunication::HandleMessage(char *topic, byte *payload, int length)
 {
-    if (topic == nullptr || topics.actions != topic)
+    if (topic == nullptr)
+        return;
+
+    if (topics.control == topic)
+    {
+        if (length <= 0 || length > 4096 || pendingControlMessage.has_value())
+        {
+            Serial.println("Comando de control rechazado: longitud o cola no disponible");
+            return;
+        }
+        pendingControlMessage = std::string(
+            reinterpret_cast<const char *>(payload), static_cast<size_t>(length));
+        return;
+    }
+
+    if (topics.actions != topic)
     {
         Serial.println("Mensaje MQTT rechazado: topic no autorizado para este dispositivo");
         return;
@@ -69,6 +88,13 @@ void MqttCommunication::HandleMessage(char *topic, byte *payload, int length)
     if (!success)
     {
         Serial.println("Error deserializando ActionMessage");
+        return;
+    }
+
+    if (!actionMessage.targetDeviceId.empty() &&
+        actionMessage.targetDeviceId != configuration.deviceId)
+    {
+        Serial.println("Mensaje MQTT rechazado: deviceId no corresponde a este dispositivo");
         return;
     }
 
@@ -122,6 +148,8 @@ bool MqttCommunication::Connect()
     }
 
     bool subscribed = mqttClient.subscribe(topics.actions.c_str());
+    const bool controlSubscribed = mqttClient.subscribe(topics.control.c_str());
+    inventoryPending = inventoryAvailable;
 
     // devuelve el estado de la conexión
     Serial.print("\nConectado al broker\n");
@@ -130,8 +158,32 @@ bool MqttCommunication::Connect()
         "Suscripcion MQTT | Topic: [%s] | Resultado: %s\n",
         topics.actions.c_str(),
         subscribed ? "OK" : "ERROR");
+    Serial.printf("Suscripcion control | Topic: [%s] | Resultado: %s\n",
+                  topics.control.c_str(), controlSubscribed ? "OK" : "ERROR");
 
+    if (!subscribed || !controlSubscribed)
+    {
+        mqttClient.disconnect();
+        Serial.println("Conexion MQTT descartada: faltan suscripciones obligatorias");
+        return false;
+    }
     return true;
+}
+
+bool MqttCommunication::TryTakeControlMessage(std::string &message)
+{
+    if (!pendingControlMessage.has_value())
+        return false;
+    message = std::move(*pendingControlMessage);
+    pendingControlMessage.reset();
+    return true;
+}
+
+bool MqttCommunication::PublishControlStatus(const std::string &payload)
+{
+    if (!mqttClient.connected() || payload.empty() || payload.size() > 4000)
+        return false;
+    return mqttClient.publish(topics.controlStatus.c_str(), payload.c_str(), true);
 }
 
 bool MqttCommunication::Loop()
@@ -144,7 +196,10 @@ bool MqttCommunication::Loop()
 
     if (mqttClient.connected())
     {
-        return mqttClient.loop();
+        const bool loopResult = mqttClient.loop();
+        if (inventoryPending)
+            PublishInventory();
+        return loopResult;
     }
 
     static unsigned long lastReconnAttempt = 0;
@@ -194,7 +249,7 @@ bool MqttCommunication::PublishActionResponse(const ActionResult& result)
     if (!mqttClient.connected())
         return false;
 
-    JsonDocument doc = jsonConverter.ToJson(result);
+    JsonDocument doc = jsonConverter.ToJson(result, configuration.deviceId);
 
     std::string payload;
     serializeJson(doc, payload);
@@ -203,6 +258,40 @@ bool MqttCommunication::PublishActionResponse(const ActionResult& result)
 
     Serial.printf("Respuesta publicada: %s | Bytes: %u\n", published ? "SI" : "NO",  static_cast<unsigned>(payload.size()));
 
+    return published;
+}
+
+void MqttCommunication::SetInventory(const DeviceInventory &newInventory)
+{
+    JsonDocument document = jsonConverter.InventoryToJson(newInventory);
+    std::string newPayload;
+    serializeJson(document, newPayload);
+    const bool changed = newPayload != inventoryPayload;
+    inventory = newInventory;
+    inventoryPayload = std::move(newPayload);
+    inventoryAvailable = !inventory.deviceId.empty() && !inventory.devices.empty() &&
+                         inventoryPayload.size() <= 4000;
+    inventoryPending = inventoryAvailable && (inventoryPending || changed);
+}
+
+bool MqttCommunication::PublishInventory()
+{
+    if (!mqttClient.connected() || !inventoryAvailable)
+        return false;
+
+    if (inventoryPayload.size() > 4000)
+    {
+        Serial.println("Inventario no publicado: payload demasiado grande");
+        return false;
+    }
+
+    const bool published = mqttClient.publish(
+        topics.inventory.c_str(), inventoryPayload.c_str(), true);
+    if (published)
+        inventoryPending = false;
+    Serial.printf("Inventario MQTT | Topic: [%s] | Resultado: %s | Bytes: %u\n",
+                  topics.inventory.c_str(), published ? "OK" : "ERROR",
+                  static_cast<unsigned>(inventoryPayload.size()));
     return published;
 }
 

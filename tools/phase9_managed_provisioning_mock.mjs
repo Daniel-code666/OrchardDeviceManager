@@ -6,6 +6,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { buildEnvelope } from './phase5_credentials_mock.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,6 +37,8 @@ function parseArgs(argv) {
   const result = {
     host: '0.0.0.0', port: 8090, token: 'huerta-local-token-2026',
     userId: 'usuario-web-local', gardenId: 'huerta-web-local', pendingPolls: 0,
+    credentialPendingPolls: 0, mqttHost: '192.168.0.13', mqttPort: 1884,
+    mqttUser: 'device-local', mqttPassword: 'mqtt-local-password', credentialVersion: 1,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
@@ -46,6 +49,13 @@ function parseArgs(argv) {
     else if (key === '--user-id') result.userId = value;
     else if (key === '--garden-id') result.gardenId = value;
     else if (key === '--pending-polls') result.pendingPolls = Number(value);
+    else if (key === '--credential-pending-polls') result.credentialPendingPolls = Number(value);
+    else if (key === '--mqtt-host') result.mqttHost = value;
+    else if (key === '--mqtt-port') result.mqttPort = Number(value);
+    else if (key === '--mqtt-user') result.mqttUser = value;
+    else if (key === '--mqtt-password') result.mqttPassword = value;
+    else if (key === '--credential-version') result.credentialVersion = Number(value);
+    else if (key === '--device-key-output') result.deviceKeyOutput = value;
     else if (key === '--cert') result.cert = value;
     else if (key === '--key') result.key = value;
     else continue;
@@ -77,6 +87,8 @@ function validRegistration(value) {
 
 export function createMockHandler(options) {
   const sessions = new Map();
+  const credentialSessions = new Map();
+  let tokenConsumed = false;
   const pagePath = path.join(scriptDirectory, 'managed-provisioning-web.html');
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost');
@@ -91,6 +103,7 @@ export function createMockHandler(options) {
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/device-provisioning/claims') {
+      if (tokenConsumed) { sendJson(response, 410, { errorCode: 'provisioning_token_consumed' }); return; }
       let raw = '';
       for await (const chunk of request) {
         raw += chunk;
@@ -101,11 +114,80 @@ export function createMockHandler(options) {
       if (!validRegistration(registration)) { sendJson(response, 400, { errorCode: 'invalid_contract' }); return; }
       sessions.set(registration.requestId, {
         response: buildApprovedResponse(registration, options.userId, options.gardenId),
+        registration,
         pollsRemaining: options.pendingPolls,
       });
       console.log(`Registro recibido: ${registration.deviceId} | ${registration.requestId}`);
       if (options.pendingPolls > 0) sendJson(response, 202, { status: 'pending' });
       else sendJson(response, 200, sessions.get(registration.requestId).response);
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/api/device-provisioning/mqtt-credentials') {
+      let raw = '';
+      for await (const chunk of request) {
+        raw += chunk;
+        if (raw.length > 8192) { sendJson(response, 413, { errorCode: 'request_too_large' }); return; }
+      }
+      let registration;
+      try { registration = JSON.parse(raw); } catch { sendJson(response, 400, { errorCode: 'invalid_json' }); return; }
+      const valid = registration?.type === 'mqtt_credentials_registration' &&
+        registration.contractVersion === 1 && typeof registration.deviceId === 'string' &&
+        /^[a-f0-9]{32}$/.test(registration.requestId) &&
+        /^[a-f0-9]{64}$/.test(registration.bootstrapKey) &&
+        Number.isInteger(registration.currentCredentialVersion);
+      if (!valid) { sendJson(response, 400, { errorCode: 'invalid_contract' }); return; }
+
+      const existing = credentialSessions.get(registration.requestId);
+      if (tokenConsumed) {
+        if (existing && existing.deviceId === registration.deviceId)
+          sendJson(response, 200, existing.envelope);
+        else
+          sendJson(response, 410, { errorCode: 'provisioning_token_consumed' });
+        return;
+      }
+
+      const approvedClaim = [...sessions.values()].find(
+        (session) => session.registration.deviceId === registration.deviceId,
+      );
+      if (!approvedClaim) { sendJson(response, 409, { errorCode: 'device_not_claimed' }); return; }
+      const version = Math.max(options.credentialVersion, registration.currentCredentialVersion + 1);
+      const envelope = buildEnvelope({
+        type: 'mqtt_credentials_request', contractVersion: 1,
+        deviceId: registration.deviceId, requestId: registration.requestId,
+        currentCredentialVersion: registration.currentCredentialVersion,
+      }, registration.bootstrapKey, {
+        host: options.mqttHost, port: options.mqttPort,
+        clientId: approvedClaim.registration.mqttClientId,
+        user: options.mqttUser, password: options.mqttPassword, credentialVersion: version,
+      });
+      credentialSessions.set(registration.requestId, {
+        deviceId: registration.deviceId, envelope,
+        pollsRemaining: options.credentialPendingPolls,
+      });
+      if (options.deviceKeyOutput) {
+        const outputPath = path.resolve(options.deviceKeyOutput);
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        fs.writeFileSync(outputPath, `${JSON.stringify({
+          deviceId: registration.deviceId, bootstrapKey: registration.bootstrapKey,
+        }, null, 2)}\n`, { mode: 0o600 });
+        console.log(`Clave de prueba guardada para herramientas locales: ${outputPath}`);
+      }
+      tokenConsumed = true;
+      console.log(`Credenciales MQTT entregadas: ${registration.deviceId} | versión ${version}`);
+      if (options.credentialPendingPolls > 0) sendJson(response, 202, { status: 'pending' });
+      else sendJson(response, 200, envelope);
+      return;
+    }
+    const credentialMatch = url.pathname.match(
+      /^\/api\/device-provisioning\/mqtt-credentials\/([a-f0-9]{32})$/,
+    );
+    if (request.method === 'GET' && credentialMatch) {
+      const session = credentialSessions.get(credentialMatch[1]);
+      if (!session) { sendJson(response, 404, { status: 'pending' }); return; }
+      if (session.pollsRemaining > 0) {
+        session.pollsRemaining -= 1;
+        sendJson(response, 202, { status: 'pending' });
+      } else sendJson(response, 200, session.envelope);
       return;
     }
     const match = url.pathname.match(/^\/api\/device-provisioning\/claims\/([a-f0-9]{32})$/);
