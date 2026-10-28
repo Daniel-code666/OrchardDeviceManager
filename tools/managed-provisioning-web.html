@@ -14,8 +14,9 @@
 </head>
 <body>
   <h1>Configurar dispositivo Huerta</h1>
-  <p class="hint">Herramienta local de las fases 8 a 13. Requiere Chrome o Edge y una conexión USB.</p>
-  <section><button id="connect">Conectar dispositivo</button><button id="identify" disabled>Identificar</button>
+  <p class="hint">Herramienta local de las fases 8 a 14. Requiere Chrome o Edge y una conexión USB.</p>
+  <section><button id="connect">Conectar dispositivo</button><button id="disconnect" disabled>Desconectar</button>
+    <button id="identify" disabled>Identificar</button><button id="evidence" disabled>Descargar evidencia</button>
     <span id="state" class="state">Sin conexión</span></section>
   <section><form id="bootstrap">
     <label>Red Wi‑Fi<input id="ssid" maxlength="32" required autocomplete="off"></label>
@@ -28,12 +29,17 @@
   </form></section>
   <section><h2>Eventos del dispositivo</h2><pre id="log"></pre></section>
 <script>
-let port, reader, writer, buffer = '', provisioned = false;
+let port, reader, writer, readTask, buffer = '', provisioned = false, identifiedDevice = null;
+const evidenceEvents = [];
 const log = document.querySelector('#log');
 const state = document.querySelector('#state');
 const requestId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 32);
 function append(value){ log.textContent += `${value}\n`; log.scrollTop = log.scrollHeight; }
 async function send(message){ await writer.write(new TextEncoder().encode(`${JSON.stringify(message)}\n`)); }
+function capture(event){
+  evidenceEvents.push({receivedAt:new Date().toISOString(),payload:event});
+  document.querySelector('#evidence').disabled=!identifiedDevice;
+}
 function setProvisioningMode(value){
   provisioned=value;
   document.querySelector('#bootstrap-only').classList.toggle('hidden',value);
@@ -44,29 +50,53 @@ function setProvisioningMode(value){
 async function readLoop(){
   const decoder = new TextDecoder();
   while (port?.readable) {
-    reader = port.readable.getReader();
-    try { while (true) { const {value,done}=await reader.read(); if(done) break; buffer += decoder.decode(value,{stream:true});
+    const activeReader=port.readable.getReader(); reader=activeReader;
+    try { while (true) { const {value,done}=await activeReader.read(); if(done) break; buffer += decoder.decode(value,{stream:true});
       const lines=buffer.split(/\r?\n/); buffer=lines.pop(); for(const line of lines){
         if(!line.trim().startsWith('{')) continue;
-        try { const event=JSON.parse(line); append(JSON.stringify(event,null,2));
+        try { const event=JSON.parse(line); append(JSON.stringify(event,null,2)); capture(event);
           if(event.type==='device_identify_result'){
+            identifiedDevice={deviceId:event.deviceId,hardwareId:event.hardwareId,
+              firmwareVersion:event.firmwareVersion,board:event.board};
             setProvisioningMode(event.provisioningState==='provisioned');
             state.textContent=`${event.deviceId} · ${event.provisioningState}`;
           }
           if(event.type==='device_configuration_status') state.textContent=`${event.stage}: ${event.status}${event.errorCode?' · '+event.errorCode:''}`;
         } catch {}
       }}
-    } finally { reader.releaseLock(); }
+    } finally { activeReader.releaseLock(); if(reader===activeReader) reader=null; }
   }
 }
 document.querySelector('#connect').onclick=async()=>{
   if(!('serial' in navigator)){ state.textContent='Web Serial no está disponible'; return; }
+  evidenceEvents.length=0; identifiedDevice=null; log.textContent='';
+  document.querySelector('#evidence').disabled=true;
   port=await navigator.serial.requestPort(); await port.open({baudRate:115200,bufferSize:8192});
   writer=port.writable.getWriter(); state.textContent='Conectado por USB';
+  document.querySelector('#connect').disabled=true; document.querySelector('#disconnect').disabled=false;
   document.querySelector('#identify').disabled=false; document.querySelector('#send').disabled=false;
-  readLoop().catch(error=>append(`Lectura finalizada: ${error.message}`));
+  readTask=readLoop().catch(error=>append(`Lectura finalizada: ${error.message}`));
+};
+document.querySelector('#disconnect').onclick=async()=>{
+  try { if(reader) await reader.cancel(); } catch {}
+  try { if(readTask) await readTask; } catch {}
+  try { if(writer){ writer.releaseLock(); writer=null; } } catch {}
+  try { if(port) await port.close(); } catch {}
+  port=null; readTask=null; buffer=''; state.textContent='Sin conexión';
+  document.querySelector('#connect').disabled=false; document.querySelector('#disconnect').disabled=true;
+  document.querySelector('#identify').disabled=true; document.querySelector('#send').disabled=true;
 };
 document.querySelector('#identify').onclick=()=>send({type:'device_identify',contractVersion:1,requestId:requestId()});
+document.querySelector('#evidence').onclick=()=>{
+  if(!identifiedDevice) return;
+  const evidence={schemaVersion:1,capturedAt:new Date().toISOString(),device:identifiedDevice,
+    events:evidenceEvents};
+  const blob=new Blob([`${JSON.stringify(evidence,null,2)}\n`],{type:'application/json'});
+  const anchor=document.createElement('a'); anchor.href=URL.createObjectURL(blob);
+  const stamp=new Date().toISOString().replaceAll(':','-').replace(/\.\d{3}Z$/,'Z');
+  anchor.download=`huerta-web-${identifiedDevice.deviceId}-${stamp}.json`; anchor.click();
+  setTimeout(()=>URL.revokeObjectURL(anchor.href),1000);
+};
 document.querySelector('#bootstrap').onsubmit=async(event)=>{
   event.preventDefault();
   const wifi={ssid:document.querySelector('#ssid').value,password:document.querySelector('#password').value};
