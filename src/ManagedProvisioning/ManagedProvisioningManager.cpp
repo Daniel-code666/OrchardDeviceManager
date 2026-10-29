@@ -307,7 +307,7 @@ void ManagedProvisioningManager::RegisterClaim(unsigned long now)
     int statusCode = 0;
     std::string responseBody;
     std::string errorCode;
-    const std::string url = persistedRecord.serviceBaseUrl + "/api/device-provisioning/claims";
+    const std::string url = persistedRecord.serviceBaseUrl + "/api/DeviceProvisioning/claims";
     const std::string body = ManagedProvisioningJson::SerializeClaimRegistration(
         claim, identity, firmwareVersion);
     if (!SendHttpRequest("POST", url, body, statusCode, responseBody, errorCode))
@@ -357,7 +357,7 @@ void ManagedProvisioningManager::PollClaim(unsigned long now)
     std::string body;
     std::string errorCode;
     const std::string url = persistedRecord.serviceBaseUrl +
-                            "/api/device-provisioning/claims/" + claim.requestId;
+                            "/api/DeviceProvisioning/claims/" + claim.requestId;
     if (!SendHttpRequest("GET", url, "", statusCode, body, errorCode))
     {
         ScheduleRetry(now, "claim", errorCode.c_str());
@@ -432,7 +432,7 @@ void ManagedProvisioningManager::RequestCredentials(unsigned long now)
     std::string responseBody;
     std::string errorCode;
     const std::string url = persistedRecord.serviceBaseUrl +
-                            "/api/device-provisioning/mqtt-credentials";
+                            "/api/DeviceProvisioning/mqtt-credentials";
     const std::string body = ManagedProvisioningJson::SerializeCredentialRegistration(
         request, bootstrapKey);
     // La clave solo vive en esta solicitud al servicio. Nunca se emite como evento serie.
@@ -484,7 +484,7 @@ void ManagedProvisioningManager::PollCredentials(unsigned long now)
     std::string body;
     std::string errorCode;
     const std::string url = persistedRecord.serviceBaseUrl +
-                            "/api/device-provisioning/mqtt-credentials/" + request.requestId;
+                            "/api/DeviceProvisioning/mqtt-credentials/" + request.requestId;
     if (!SendHttpRequest("GET", url, "", statusCode, body, errorCode))
     {
         ScheduleRetry(now, "mqtt_credentials", errorCode.c_str());
@@ -577,7 +577,9 @@ bool ManagedProvisioningManager::SendHttpRequest(const char *method,
         return false;
     }
 
-    http.addHeader("Authorization", ("Bearer " + persistedRecord.provisioningToken).c_str());
+    // http.addHeader("Authorization", ("Bearer " + persistedRecord.provisioningToken).c_str());
+    http.setAuthorizationType("Bearer");
+    http.setAuthorization(persistedRecord.provisioningToken.c_str());
     http.addHeader("Accept", "application/json");
     if (std::string(method) == "GET")
         statusCode = http.GET();
